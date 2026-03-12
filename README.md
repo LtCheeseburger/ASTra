@@ -1,43 +1,87 @@
-# Project ASTra (ASTra monorepo bootstrap)
+# ASTra
 
-This is the **initial skeleton** for Project ASTra / ASTra:
-- C++20 + CMake + Ninja
-- Qt 6 Widgets GUI (`gf_toolsuite_gui`)
-- CLI (`gf_cli`) for CI/batch workflows
-- spdlog + nlohmann/json via FetchContent
-- Catch2 tests
-- Early cross-platform CI scaffolding (GitHub Actions)
+ASTra is a C++20 + Qt6 modding toolkit focused on EA Sports archive and UI formats used by NCAA Football 14 and related titles.
 
-## Quick start (Windows 11)
+This repository is the active source tree for the desktop app and supporting libraries. The project is currently in an internal alpha stage, with current work centered on archive browsing/editing, texture workflows, RSF handling, and APT UI tooling.
 
-### Prereqs
-- Visual Studio 2022 Build Tools or full VS 2022 (Desktop development with C++)
-- CMake (3.24+)
-- Ninja
-- Qt 6.6+ (MSVC build)
+## Current focus
+
+ASTra is being built as a safer, more modern replacement for older game-specific tools. The main goals are:
+
+- inspect and browse AST/BGFA containers
+- safely replace or export supported files
+- work with RSF data and related configs
+- inspect textures and support EA/XPR2 texture workflows
+- parse and edit APT UI data with a visual preview/editor foundation
+- provide both a GUI app and a CLI for batch or validation workflows
+
+## Project layout
+
+```text
+ASTra/
+├─ apps/
+│  ├─ gf_cli/                # command-line entrypoint
+│  └─ gf_toolsuite_gui/      # Qt6 desktop app
+├─ libs/
+│  ├─ gf_apt/                # APT parsing / XML / preview helpers
+│  ├─ gf_core/               # core utilities, archive logic, safe-write helpers
+│  ├─ gf_models/             # shared models and RSF-related types
+│  ├─ gf_platform_ps3/       # PS3/platform-specific helpers
+│  └─ gf_textures/           # DDS/XPR2 and texture rebuild helpers
+├─ docs/
+│  ├─ architecture/
+│  └─ requirements/
+├─ tests/
+└─ cmake/
+```
+
+## Build requirements
+
+Minimum tooling:
+
+- CMake 3.24+
+- a C++20 compiler
+- Ninja or another supported CMake generator
+- Qt 6 Widgets
 - Git
-- VSCode + CMake Tools extension
 
-### Configure / Build
+Third-party libraries such as `spdlog`, `nlohmann/json`, and `Catch2` are pulled through CMake `FetchContent`.
+
+## Build
+
+### Windows example
+
 ```powershell
-cmake -S . -B out-win -G Ninja -DGF_BUILD_TESTS=ON -DGF_BUILD_GUI=ON
+cmake -S . -B out-win -G Ninja -DGF_BUILD_GUI=ON -DGF_BUILD_TESTS=ON
 cmake --build out-win
 ctest --test-dir out-win --output-on-failure
 ```
 
 ### Run
+
 ```powershell
-out-win\apps\gf_cli\gf_cli.exe --version
+out-win\apps\gf_cli\astra.exe --version
 out-win\apps\gf_toolsuite_gui\gf_toolsuite_gui.exe
 ```
 
 ## Notes
-- Non-Qt deps are pinned via FetchContent for reproducible builds.
-- Qt is a system dependency (installed separately). Make sure CMake can find it.
-  - If needed: `-DCMAKE_PREFIX_PATH="C:\Qt\6.6.3\msvc2019_64"`
 
-## Next steps
-- Add `gf_io` safe-write + backup primitives
-- Add `gf_ast` reader/writer interfaces + safety rules
-- Wire golden tests (hash/size stable first, then parse/extract/repack)
+- Qt is expected to be installed separately and discoverable by CMake.
+- Generated files are written to the selected build directory.
+- The repository may move quickly while the internal toolset is being cleaned up and prepared for broader releases.
 
+## Documentation
+
+Additional project notes live here:
+
+- `docs/requirements/requirements.md`
+- `docs/architecture/architecture.md`
+- `docs/detection_rules.md`
+
+## Status
+
+This is not intended to be a polished public release branch yet. It is the live working repository for ASTra as the tool moves toward a more complete 0.8.x/0.9.x feature set.
+
+## License
+
+See `LICENSE`.
