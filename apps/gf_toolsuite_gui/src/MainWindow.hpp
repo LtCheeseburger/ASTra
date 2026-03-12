@@ -1,0 +1,397 @@
+#pragma once
+#include <QMainWindow>
+#include "DocumentLifecycle.hpp"
+#include <QHash>
+#include <QSet>
+#include "NameCache.hpp"
+#include <QVector>
+#include <QPoint>
+#include <optional>
+
+#include "AstIndexer.hpp"
+#include <gf/models/rsf.hpp>
+#include <gf/core/AstContainerEditor.hpp>
+#include <gf/apt/apt_reader.hpp>
+#include <memory>
+
+class QTreeWidget;
+class QTreeWidgetItem;
+class QLabel;
+class QDockWidget;
+class QLineEdit;
+class QWidget;
+class QProgressBar;
+class QPlainTextEdit;
+class QTabWidget;
+class QTableWidget;
+class QAction;
+class QToolBar;
+class QCloseEvent;
+class QStatusBar;
+class QScrollArea;
+class QComboBox;
+class QSplitter;
+class QStackedWidget;
+class QSpinBox;
+class QDoubleSpinBox;
+class QGraphicsView;
+class QGraphicsScene;
+
+namespace gf::gui {
+
+class MainWindow final : public QMainWindow {
+  Q_OBJECT
+ public:
+  enum class Mode { Standalone, Game };
+
+  explicit MainWindow(QWidget* parent = nullptr);
+
+  void setMode(Mode m);
+  void openStandaloneAst(const QString& astPath);
+
+  // Game mode entrypoint (called by GameSelectorWindow)
+  void openGame(const QString& displayName,
+                const QString& rootPath,
+                const QString& baseContentDir,
+                const QString& updateContentDir);
+
+protected:
+  void closeEvent(QCloseEvent* e) override;
+
+public slots:
+  // Open a plain text file into the in-pane Text tab (no separate window).
+  bool openExternalTextFile(const QString& path);
+
+
+private slots:
+
+    void onRestoreLatestBackup();
+  void onItemExpanded(QTreeWidgetItem* item);
+  void onItemDoubleClicked(QTreeWidgetItem* item, int column);
+  void onTreeContextMenu(const QPoint& pos);
+  void onSearchChanged(const QString& text);
+  void onCurrentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
+  void onOpenFile();
+  void onOpenApt();
+  void onAptSave();
+  void onAptExport();
+  void setAptFrameIndex(int idx);
+  void onSave();
+  void onSaveAs();
+  void onRevert();
+  void onAptApply();
+
+private:
+  Mode m_mode = Mode::Standalone;
+
+  // Editing mode is intentionally explicit and off by default.
+  // When disabled, all write/replace operations are gated.
+  bool editingEnabled() const;
+  void setEditingEnabled(bool enabled);
+
+  bool devModeEnabled() const;
+  void setDevModeEnabled(bool enabled);
+
+  void buildUi();
+  void startIndexing(const QString& displayName,
+                     const QString& rootPath,
+                     const QString& baseContentDir,
+                     const QString& updateContentDir);
+  void applyIndexToTree(const QVector<AstIndexEntry>& entries,
+                        QTreeWidgetItem* gameRoot,
+                        QTreeWidgetItem* baseBucket,
+                        QTreeWidgetItem* updateBucket);
+
+  // Search helper
+  bool filterItemRecursive(QTreeWidgetItem* item, const QString& needleLower);
+
+  // Right-side preview (currently: hex preview for any selected item)
+  void showViewerForItem(QTreeWidgetItem* item);
+  static QString formatHexPreview(const QByteArray& data, quint64 baseOffset);
+
+  // File IO helpers (v0.6.1 foundation)
+  void exportCopyOf(const QString& sourcePath);
+  void onUndoLastReplace();
+  void refreshCurrentArchiveView();
+
+  // --- APT viewer groundwork (v0.6.21.0) ---
+  void openStandaloneApt(const QString& aptPath);
+  void updateDocumentActions();
+  void syncDirtyFromUi();
+  void setDirty(bool dirty);
+  void updateWindowTitle();
+
+  // Status bar: persistent context widgets (v0.6.20.9)
+  void updateStatusBar();
+  void updateStatusSelection(QTreeWidgetItem* current);
+
+  // Centralized user-facing dialogs (v0.6.20.12 UX hardening)
+  void showErrorDialog(const QString& title,
+                       const QString& message,
+                       const QString& details = QString(),
+                       bool noChangesSaved = false);
+  void showInfoDialog(const QString& title, const QString& message);
+  void toastOk(const QString& message);
+
+  void setRsfDirty(bool dirty);
+  void refreshRsfMaterialsTable();
+  void refreshRsfParamsTable(int materialIndex);
+  void pullRsfUiIntoDocument();
+  bool applyRsfChanges();
+  void clearAptViewer();
+  bool populateAptViewerFromFiles(const QString& aptPath, const QString& constPath, const QString& sourceLabel = QString());
+  bool loadAptForItem(QTreeWidgetItem* item, QString* errorOut = nullptr);
+
+  // APT property editor helpers (v0.8.4)
+  void syncAptPropEditorFromItem(QTreeWidgetItem* item);
+  void refreshAptPreview();
+  void renderAptFrameToScene(const gf::apt::AptFrame* frame,
+                             int highlightedPlacementIndex = -1,
+                             const std::vector<gf::apt::AptCharacter>* characterTable = nullptr,
+                             const QString& noFrameMsg = {},
+                             bool fitToContent = false);
+  std::optional<int> selectedAptFrameIndex() const;
+  std::optional<int> selectedAptPlacementIndex() const;
+
+  QLabel* m_header = nullptr;
+  QLineEdit* m_search = nullptr;
+  QTreeWidget* m_tree = nullptr;
+
+  QDockWidget* m_treeDock = nullptr;
+  QWidget* m_viewerHost = nullptr;
+  QLabel* m_viewerLabel = nullptr;
+  QTabWidget* m_viewTabs = nullptr;
+  QPlainTextEdit* m_hexView = nullptr;
+  QPlainTextEdit* m_textView = nullptr;
+  QToolBar* m_textToolbar = nullptr;
+  QAction* m_textWrapAction = nullptr;
+  QAction* m_textApplyAction = nullptr;
+  QAction* m_textEditAction = nullptr; // Toggle editability for embedded text
+  bool m_textForceEdit = false;
+  QAction* m_textExportAction = nullptr;
+  QAction* m_textReloadAction = nullptr;
+  QAction* m_textOpenExternalAction = nullptr;
+  QAction* m_textFindAction = nullptr;
+  QAction* m_textFindNextAction = nullptr;
+
+  QAction* m_textReplaceAction = nullptr;
+  QAction* m_textGotoLineAction = nullptr;
+  QAction* m_textSaveShortcutAction = nullptr; // Ctrl+S triggers Apply when possible
+  int m_textTabIndex = -1;
+  bool m_suppressSelectionChange = false;
+
+  // Text tab external-file mode (no separate window)
+  bool m_textExternalMode = false;
+  QString m_textExternalPath;
+  QString m_textExternalSuggestedName;
+
+  // Text tab APT->XML mode (in-memory; no file writes unless user explicitly exports).
+  bool m_textAptXmlMode = false;
+  QString m_textAptPath;
+  QString m_textConstPath;
+  QString m_textAptXmlCached;
+  QString m_lastFindQuery;
+  QWidget* m_textureTab = nullptr;
+  QLabel* m_textureInfo = nullptr;
+  QComboBox* m_textureMipSelector = nullptr;
+  QLabel* m_imageView = nullptr;
+  QScrollArea* m_imageScroll = nullptr;
+  // Keep the unscaled texture pixmap so we can re-fit it when the window/tab resizes.
+  QPixmap m_textureOriginal;
+  double m_textureZoom = 1.0;
+  bool m_textureFitToView = true;
+  QByteArray m_currentTextureBytes;
+  QString m_currentTextureType;
+  QString m_currentTextureName;
+  int m_currentTextureMipCount = 0;
+  int m_currentTextureMipShown = 0;
+
+  // APT tab widgets
+  QWidget* m_aptTab = nullptr;
+  QToolBar* m_aptToolbar = nullptr;
+  QAction* m_aptApplyAction = nullptr;
+  QTreeWidget* m_aptTree = nullptr;
+  QStackedWidget* m_aptPropStack = nullptr;
+  QWidget* m_aptRightPane = nullptr;
+  QGraphicsView* m_aptPreviewView = nullptr;
+  QGraphicsScene* m_aptPreviewScene = nullptr;
+  QAction* m_aptDebugAction = nullptr;
+  // Page 0: plain text details (fallback / group / slice nodes)
+  QPlainTextEdit* m_aptDetails = nullptr;
+  // Page 1: Summary editor
+  QWidget* m_aptSummaryPage = nullptr;
+  QSpinBox* m_aptSumWidthSpin = nullptr;
+  QSpinBox* m_aptSumHeightSpin = nullptr;
+  QLabel* m_aptSumFrameCountLabel = nullptr;
+  QLabel* m_aptSumCharCountLabel = nullptr;
+  QLabel* m_aptSumImportCountLabel = nullptr;
+  QLabel* m_aptSumExportCountLabel = nullptr;
+  QLabel* m_aptSumOffsetLabel = nullptr;
+  // Page 2: Import editor
+  QWidget* m_aptImportPage = nullptr;
+  QLineEdit* m_aptImportMovieEdit = nullptr;
+  QLineEdit* m_aptImportNameEdit = nullptr;
+  QLabel* m_aptImportCharLabel = nullptr;
+  QLabel* m_aptImportOffsetLabel = nullptr;
+  // Page 3: Export editor
+  QWidget* m_aptExportPage = nullptr;
+  QLineEdit* m_aptExportNameEdit = nullptr;
+  QLabel* m_aptExportCharLabel = nullptr;
+  QLabel* m_aptExportOffsetLabel = nullptr;
+  // Page 4: Character info (read-only)
+  QWidget* m_aptCharPage = nullptr;
+  QLabel* m_aptCharTypeLabel = nullptr;
+  QLabel* m_aptCharSigLabel = nullptr;
+  QLabel* m_aptCharOffsetLabel = nullptr;
+  // Page 5: Frame info (read-only)
+  QWidget* m_aptFramePage = nullptr;
+  QLabel* m_aptFrameItemCountLabel = nullptr;
+  QLabel* m_aptFrameItemsOffsetLabel = nullptr;
+  // Page 6: Placement editor
+  QWidget* m_aptPlacementPage = nullptr;
+  QSpinBox* m_aptPlacementDepthSpin = nullptr;
+  QSpinBox* m_aptPlacementCharSpin = nullptr;
+  QLineEdit* m_aptPlacementNameEdit = nullptr;
+  QDoubleSpinBox* m_aptPlacementXSpin = nullptr;
+  QDoubleSpinBox* m_aptPlacementYSpin = nullptr;
+  QDoubleSpinBox* m_aptPlacementScaleXSpin = nullptr;
+  QDoubleSpinBox* m_aptPlacementScaleYSpin = nullptr;
+  QLabel* m_aptPlacementOffsetLabel = nullptr;
+  // APT in-memory model
+  std::optional<gf::apt::AptFile> m_currentAptFile;
+  bool m_aptDirty = false;
+  bool m_aptUpdatingUi = false;
+
+  // APT frame navigation controls
+  QSpinBox* m_aptFrameSpin = nullptr;
+  QLabel* m_aptFrameCountLabel = nullptr;
+  QAction* m_aptPrevFrameAction = nullptr;
+  QAction* m_aptNextFrameAction = nullptr;
+  int m_aptCurrentFrameIndex = 0;
+  // -1 = previewing root movie frames; >= 0 = index of character being previewed
+  int m_aptCharPreviewIdx = -1;
+
+  // APT placement editor: rotation/skew matrix fields (b and c)
+  QDoubleSpinBox* m_aptPlacementRotSkew0Spin = nullptr; // b = rotate_skew_0
+  QDoubleSpinBox* m_aptPlacementRotSkew1Spin = nullptr; // c = rotate_skew_1
+
+  // APT save/export toolbar actions
+  QAction* m_aptSaveAction = nullptr;
+  QAction* m_aptExportAction = nullptr;
+
+  // APT save context (set by loadAptForItem, cleared by clearAptViewer)
+  bool m_aptIsEmbedded = false;
+  bool m_aptSaveContextIsNested = false;
+  int m_aptSaveAptEntryIdx = -1;
+  int m_aptSaveConstEntryIdx = -1;
+  QString m_aptSaveOuterPath;
+
+  QWidget* m_rsfTab = nullptr;
+  QLabel* m_rsfNameValue = nullptr;
+  QLabel* m_rsfModelCountValue = nullptr;
+  QLabel* m_rsfMaterialCountValue = nullptr;
+  QLabel* m_rsfTextureCountValue = nullptr;
+  QTableWidget* m_rsfMaterialsTable = nullptr;
+  QTableWidget* m_rsfParamsTable = nullptr;
+  QTableWidget* m_rsfTexturesTable = nullptr;
+  QToolBar* m_rsfToolbar = nullptr;
+  QAction* m_rsfEditAction = nullptr;
+  QAction* m_rsfApplyAction = nullptr;
+  bool m_rsfEditMode = true;
+  bool m_rsfDirty = false;
+  bool m_rsfUpdatingUi = false;
+  QString m_rsfSourcePath;
+  bool m_rsfSourceEmbedded = false;
+  std::uint32_t m_rsfSourceEntryIndex = 0;
+  QByteArray m_rsfOriginalBytes;
+  std::optional<gf::models::rsf::document> m_rsfCurrentDoc;
+
+
+  // In-memory AST edit session for the currently edited container.
+  std::unique_ptr<gf::core::AstContainerEditor> m_liveAstEditor;
+  QString m_liveAstPath;
+
+  // Cache: key -> parsed? (key is absolutePath or absolutePath@offset)
+  // Parsing state for expandable (embedded) AST nodes.
+  // We keep an in-flight set to avoid launching duplicate parses, and a done set
+  // so re-expanding doesn't re-parse.
+  QSet<QString> m_parseKeysInFlight;
+  QSet<QString> m_parsedKeysDone;
+
+  // Persistent friendly-name cache (per game)
+  NameCache m_nameCache;
+
+  // UI progress (top-right via status bar permanent widget)
+  QProgressBar* m_parseProgress = nullptr;
+  int m_parseInFlight = 0;
+
+  // Status bar context widgets
+  QLabel* m_statusDocLabel = nullptr;
+  QLabel* m_statusEntryLabel = nullptr;
+  QLabel* m_statusMetaLabel = nullptr;
+  QLabel* m_statusDirtyLabel = nullptr;
+
+  // Cached selection context (avoid depending on live QTreeWidgetItem*)
+  QString m_statusContainerPath;
+  QString m_statusEntryName;
+  QString m_statusEntryType;
+  qulonglong m_statusEntrySize = 0;
+  qulonglong m_statusEntryFlags = 0;
+
+  // Toolbar/menu actions
+  QAction* m_actOpen = nullptr;
+  QAction* m_actOpenApt = nullptr;
+  QAction* m_actRestoreBackup = nullptr;
+  QAction* m_actSave = nullptr;
+  QAction* m_actSaveAs = nullptr;
+  QAction* m_actRevert = nullptr;
+
+  QAction* m_actEnableEditing = nullptr;
+  QLabel* m_editModeLabel = nullptr;
+
+  QAction* m_actDevMode = nullptr;
+  QAction* m_actUndoLastReplace = nullptr;
+  bool m_devMode = false;
+
+  bool m_editingEnabled = false;
+
+  struct LastReplaceUndo {
+    bool valid = false;
+    QString containerPath;
+    std::uint32_t entryIndex = 0;
+    QByteArray previousStoredBytes;
+    QByteArray previousPreviewBytes;
+    QString itemCacheKey;
+    QString displayName;
+  };
+  LastReplaceUndo m_lastReplaceUndo;
+
+  // Current "document" context (still read-only in v0.6.1)
+  DocumentLifecycle m_doc;
+
+  // Used to reload NameCache + rebuild UI on Revert.
+  QString m_cacheId;
+  QString m_lastGameDisplayName;
+  QString m_lastGameRootPath;
+  QString m_lastGameBaseContentDir;
+  QString m_lastGameUpdateContentDir;
+
+  // Incremented whenever we rebuild the tree. Used to ignore late async updates.
+  quint64 m_treeToken = 0;
+
+protected:
+  void resizeEvent(QResizeEvent* e) override;
+  bool eventFilter(QObject* obj, QEvent* event) override;
+
+private:
+  void applyTextureZoom();
+  void stepTextureZoom(int direction);
+  void resetTextureZoomToFit();
+  void populateTextureMipSelector(int mipCount);
+  bool renderCurrentTextureMip(int mipIndex);
+  void clearCurrentTextureState();
+
+private:
+};
+
+} // namespace gf::gui

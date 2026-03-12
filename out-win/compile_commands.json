@@ -1,0 +1,980 @@
+[
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\spdlog.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\spdlog.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/spdlog.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/spdlog.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\stdout_sinks.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\stdout_sinks.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/stdout_sinks.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/stdout_sinks.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\color_sinks.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\color_sinks.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/color_sinks.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/color_sinks.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\file_sinks.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\file_sinks.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/file_sinks.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/file_sinks.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\async.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\async.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/async.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/async.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\cfg.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\cfg.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/cfg.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/cfg.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/_deps/spdlog-src/include -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -o _deps\\spdlog-build\\CMakeFiles\\spdlog.dir\\src\\bundled_fmtlib_format.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\spdlog-src\\src\\bundled_fmtlib_format.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/spdlog-src/src/bundled_fmtlib_format.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/spdlog-build/CMakeFiles/spdlog.dir/src/bundled_fmtlib_format.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\benchmark\\catch_chronometer.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\benchmark\\catch_chronometer.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/benchmark/catch_chronometer.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/catch_chronometer.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\benchmark\\detail\\catch_analyse.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\benchmark\\detail\\catch_analyse.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/benchmark/detail/catch_analyse.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_analyse.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\benchmark\\detail\\catch_benchmark_function.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\benchmark\\detail\\catch_benchmark_function.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/benchmark/detail/catch_benchmark_function.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_benchmark_function.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\benchmark\\detail\\catch_run_for_at_least.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\benchmark\\detail\\catch_run_for_at_least.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/benchmark/detail/catch_run_for_at_least.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_run_for_at_least.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\benchmark\\detail\\catch_stats.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\benchmark\\detail\\catch_stats.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/benchmark/detail/catch_stats.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_stats.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\generators\\catch_generator_exception.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\generators\\catch_generator_exception.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/generators/catch_generator_exception.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generator_exception.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\generators\\catch_generators.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\generators\\catch_generators.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/generators/catch_generators.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\generators\\catch_generators_random.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\generators\\catch_generators_random.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/generators/catch_generators_random.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators_random.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_automake.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_automake.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_automake.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_automake.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_common_base.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_common_base.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_common_base.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_common_base.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_compact.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_compact.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_compact.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_compact.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_console.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_console.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_console.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_console.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_cumulative_base.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_cumulative_base.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_cumulative_base.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_cumulative_base.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_event_listener.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_event_listener.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_event_listener.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_event_listener.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_helpers.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_helpers.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_helpers.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_helpers.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_json.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_json.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_json.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_json.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_junit.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_junit.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_junit.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_junit.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_multi.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_multi.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_multi.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_multi.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_registrars.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_registrars.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_registrars.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_registrars.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_sonarqube.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_sonarqube.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_sonarqube.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_sonarqube.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_streaming_base.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_streaming_base.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_streaming_base.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_streaming_base.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_tap.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_tap.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_tap.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_tap.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_teamcity.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_teamcity.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_teamcity.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_teamcity.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\reporters\\catch_reporter_xml.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\reporters\\catch_reporter_xml.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/reporters/catch_reporter_xml.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_xml.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_capture.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_capture.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_capture.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_capture.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_config.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_config.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_config.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_config.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_exception.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_exception.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_exception.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_exception.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_generatortracker.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_generatortracker.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_generatortracker.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_generatortracker.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_registry_hub.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_registry_hub.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_registry_hub.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_registry_hub.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_reporter.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_reporter.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_reporter.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_reporter_factory.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_reporter_factory.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_reporter_factory.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter_factory.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\interfaces\\catch_interfaces_testcase.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\interfaces\\catch_interfaces_testcase.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/interfaces/catch_interfaces_testcase.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_testcase.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_approx.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_approx.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_approx.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_approx.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_assertion_result.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_assertion_result.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_assertion_result.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_assertion_result.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_config.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_config.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_config.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_config.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_get_random_seed.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_get_random_seed.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_get_random_seed.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_get_random_seed.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_message.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_message.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_message.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_message.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_registry_hub.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_registry_hub.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_registry_hub.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_registry_hub.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_session.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_session.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_session.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_session.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_tag_alias_autoregistrar.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_tag_alias_autoregistrar.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_tag_alias_autoregistrar.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_tag_alias_autoregistrar.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_test_case_info.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_test_case_info.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_test_case_info.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_test_case_info.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_test_spec.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_test_spec.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_test_spec.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_test_spec.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_timer.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_timer.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_timer.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_timer.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_tostring.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_tostring.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_tostring.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_tostring.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_totals.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_totals.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_totals.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_totals.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_translate_exception.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_translate_exception.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_translate_exception.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_translate_exception.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\catch_version.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\catch_version.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/catch_version.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_version.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_assertion_handler.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_assertion_handler.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_assertion_handler.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_assertion_handler.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_case_insensitive_comparisons.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_case_insensitive_comparisons.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_case_insensitive_comparisons.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_case_insensitive_comparisons.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_clara.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_clara.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_clara.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_clara.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_commandline.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_commandline.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_commandline.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_commandline.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_console_colour.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_console_colour.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_console_colour.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_console_colour.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_context.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_context.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_context.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_context.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_debug_console.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_debug_console.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_debug_console.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debug_console.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_debugger.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_debugger.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_debugger.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debugger.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_decomposer.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_decomposer.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_decomposer.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_decomposer.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_enforce.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_enforce.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_enforce.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enforce.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_enum_values_registry.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_enum_values_registry.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_enum_values_registry.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enum_values_registry.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_errno_guard.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_errno_guard.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_errno_guard.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_errno_guard.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_exception_translator_registry.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_exception_translator_registry.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_exception_translator_registry.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_exception_translator_registry.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_fatal_condition_handler.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_fatal_condition_handler.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_fatal_condition_handler.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_fatal_condition_handler.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_floating_point_helpers.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_floating_point_helpers.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_floating_point_helpers.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_floating_point_helpers.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_getenv.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_getenv.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_getenv.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_getenv.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_istream.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_istream.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_istream.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_istream.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_jsonwriter.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_jsonwriter.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_jsonwriter.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_jsonwriter.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_lazy_expr.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_lazy_expr.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_lazy_expr.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_lazy_expr.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_leak_detector.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_leak_detector.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_leak_detector.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_leak_detector.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_list.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_list.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_list.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_list.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_message_info.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_message_info.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_message_info.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_message_info.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_output_redirect.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_output_redirect.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_output_redirect.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_output_redirect.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_parse_numbers.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_parse_numbers.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_parse_numbers.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_parse_numbers.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_polyfills.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_polyfills.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_polyfills.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_polyfills.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_random_number_generator.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_random_number_generator.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_random_number_generator.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_number_generator.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_random_seed_generation.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_random_seed_generation.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_random_seed_generation.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_seed_generation.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_reporter_registry.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_reporter_registry.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_reporter_registry.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_registry.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_reporter_spec_parser.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_reporter_spec_parser.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_reporter_spec_parser.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_spec_parser.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_result_type.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_result_type.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_result_type.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_result_type.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_reusable_string_stream.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_reusable_string_stream.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_reusable_string_stream.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reusable_string_stream.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_run_context.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_run_context.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_run_context.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_run_context.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_section.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_section.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_section.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_section.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_singletons.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_singletons.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_singletons.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_singletons.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_source_line_info.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_source_line_info.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_source_line_info.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_source_line_info.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_startup_exception_registry.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_startup_exception_registry.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_startup_exception_registry.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_startup_exception_registry.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_stdstreams.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_stdstreams.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_stdstreams.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stdstreams.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_string_manip.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_string_manip.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_string_manip.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_string_manip.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_stringref.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_stringref.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_stringref.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stringref.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_tag_alias_registry.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_tag_alias_registry.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_tag_alias_registry.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_tag_alias_registry.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_test_case_info_hasher.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_test_case_info_hasher.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_test_case_info_hasher.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_info_hasher.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_test_case_registry_impl.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_test_case_registry_impl.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_test_case_registry_impl.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_registry_impl.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_test_case_tracker.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_test_case_tracker.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_test_case_tracker.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_tracker.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_test_failure_exception.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_test_failure_exception.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_test_failure_exception.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_failure_exception.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_test_registry.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_test_registry.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_test_registry.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_registry.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_test_spec_parser.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_test_spec_parser.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_test_spec_parser.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_spec_parser.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_textflow.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_textflow.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_textflow.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_textflow.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_uncaught_exceptions.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_uncaught_exceptions.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_uncaught_exceptions.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_uncaught_exceptions.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_wildcard_pattern.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_wildcard_pattern.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_wildcard_pattern.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_wildcard_pattern.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\internal\\catch_xmlwriter.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_xmlwriter.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_xmlwriter.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_xmlwriter.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_container_properties.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_container_properties.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_container_properties.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_container_properties.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_exception.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_exception.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_exception.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_exception.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_floating_point.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_floating_point.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_floating_point.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_floating_point.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_predicate.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_predicate.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_predicate.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_predicate.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_quantifiers.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_quantifiers.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_quantifiers.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_quantifiers.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_string.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_string.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_string.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_string.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\catch_matchers_templated.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\catch_matchers_templated.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/catch_matchers_templated.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_templated.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2.dir\\catch2\\matchers\\internal\\catch_matchers_impl.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\matchers\\internal\\catch_matchers_impl.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/matchers/internal/catch_matchers_impl.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/internal/catch_matchers_impl.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -ffile-prefix-map=D:/source/ASTra/out-win/_deps/catch2-src/= -o _deps\\catch2-build\\src\\CMakeFiles\\Catch2WithMain.dir\\catch2\\internal\\catch_main.cpp.obj -c D:\\source\\ASTra\\out-win\\_deps\\catch2-src\\src\\catch2\\internal\\catch_main.cpp",
+  "file": "D:/source/ASTra/out-win/_deps/catch2-src/src/catch2/internal/catch_main.cpp",
+  "output": "D:/source/ASTra/out-win/_deps/catch2-build/src/CMakeFiles/Catch2WithMain.dir/catch2/internal/catch_main.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\log.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\log.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/log.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/log.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\config.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\config.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/config.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/config.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\features.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\features.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/features.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/features.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\container_magic.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\container_magic.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/container_magic.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/container_magic.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\AstRootResolver.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\AstRootResolver.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/AstRootResolver.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/AstRootResolver.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\AstArchive.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\AstArchive.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/AstArchive.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/AstArchive.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\AstContainerEditor.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\AstContainerEditor.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/AstContainerEditor.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/AstContainerEditor.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\scan.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\scan.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/scan.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/scan.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\zip_writer.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\zip_writer.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/zip_writer.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/zip_writer.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_core\\CMakeFiles\\gf_core.dir\\src\\safe_write.cpp.obj -c D:\\source\\ASTra\\libs\\gf_core\\src\\safe_write.cpp",
+  "file": "D:/source/ASTra/libs/gf_core/src/safe_write.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_core/CMakeFiles/gf_core.dir/src/safe_write.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_models\\CMakeFiles\\gf_models.dir\\src\\rsf.cpp.obj -c D:\\source\\ASTra\\libs\\gf_models\\src\\rsf.cpp",
+  "file": "D:/source/ASTra/libs/gf_models/src/rsf.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_models/CMakeFiles/gf_models.dir/src/rsf.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_models\\CMakeFiles\\gf_models.dir\\src\\scan_result.cpp.obj -c D:\\source\\ASTra\\libs\\gf_models\\src\\scan_result.cpp",
+  "file": "D:/source/ASTra/libs/gf_models/src/scan_result.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_models/CMakeFiles/gf_models.dir/src/scan_result.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_platform_ps3\\CMakeFiles\\gf_platform_ps3.dir\\src\\param_sfo.cpp.obj -c D:\\source\\ASTra\\libs\\gf_platform_ps3\\src\\param_sfo.cpp",
+  "file": "D:/source/ASTra/libs/gf_platform_ps3/src/param_sfo.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_platform_ps3/CMakeFiles/gf_platform_ps3.dir/src/param_sfo.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_textures/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_textures\\CMakeFiles\\gf_textures.dir\\src\\dds_decode.cpp.obj -c D:\\source\\ASTra\\libs\\gf_textures\\src\\dds_decode.cpp",
+  "file": "D:/source/ASTra/libs/gf_textures/src/dds_decode.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_textures/CMakeFiles/gf_textures.dir/src/dds_decode.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_textures/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_textures\\CMakeFiles\\gf_textures.dir\\src\\ea_dds_rebuild.cpp.obj -c D:\\source\\ASTra\\libs\\gf_textures\\src\\ea_dds_rebuild.cpp",
+  "file": "D:/source/ASTra/libs/gf_textures/src/ea_dds_rebuild.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_textures/CMakeFiles/gf_textures.dir/src/ea_dds_rebuild.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_textures/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_textures\\CMakeFiles\\gf_textures.dir\\src\\xpr2_rebuild.cpp.obj -c D:\\source\\ASTra\\libs\\gf_textures\\src\\xpr2_rebuild.cpp",
+  "file": "D:/source/ASTra/libs/gf_textures/src/xpr2_rebuild.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_textures/CMakeFiles/gf_textures.dir/src/xpr2_rebuild.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_textures/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_textures\\CMakeFiles\\gf_textures.dir\\src\\xbox360_xpr2_untile.cpp.obj -c D:\\source\\ASTra\\libs\\gf_textures\\src\\xbox360_xpr2_untile.cpp",
+  "file": "D:/source/ASTra/libs/gf_textures/src/xbox360_xpr2_untile.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_textures/CMakeFiles/gf_textures.dir/src/xbox360_xpr2_untile.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\apt_reader.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\apt_reader.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/apt_reader.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/apt_reader.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\apt_renderer.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\apt_renderer.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/apt_renderer.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/apt_renderer.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\apt_xml.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\apt_xml.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/apt_xml.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/apt_xml.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\aptconverter\\Aptfile.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\aptconverter\\Aptfile.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/aptconverter/Aptfile.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/aptconverter/Aptfile.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\aptconverter\\ActionHelper.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\aptconverter\\ActionHelper.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/aptconverter/ActionHelper.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/aptconverter/ActionHelper.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\aptconverter\\Flags.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\aptconverter\\Flags.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/aptconverter/Flags.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/aptconverter/Flags.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\aptconverter\\Util.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\aptconverter\\Util.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/aptconverter/Util.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/aptconverter/Util.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DNO_DLL -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o libs\\gf_apt\\CMakeFiles\\gf_apt.dir\\src\\aptconverter\\tinyxml2.cpp.obj -c D:\\source\\ASTra\\libs\\gf_apt\\src\\aptconverter\\tinyxml2.cpp",
+  "file": "D:/source/ASTra/libs/gf_apt/src/aptconverter/tinyxml2.cpp",
+  "output": "D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir/src/aptconverter/tinyxml2.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_cli\\CMakeFiles\\gf_cli.dir\\src\\main.cpp.obj -c D:\\source\\ASTra\\apps\\gf_cli\\src\\main.cpp",
+  "file": "D:/source/ASTra/apps/gf_cli/src/main.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_cli/CMakeFiles/gf_cli.dir/src/main.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\gf_toolsuite_gui_autogen\\mocs_compilation.cpp.obj -c D:\\source\\ASTra\\out-win\\apps\\gf_toolsuite_gui\\gf_toolsuite_gui_autogen\\mocs_compilation.cpp",
+  "file": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/mocs_compilation.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/gf_toolsuite_gui_autogen/mocs_compilation.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\main.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\main.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/main.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/main.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\MainWindow.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\MainWindow.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/MainWindow.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/MainWindow.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\AstIndexer.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\AstIndexer.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/AstIndexer.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/AstIndexer.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\GameSelectorWindow.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\GameSelectorWindow.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/GameSelectorWindow.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/GameSelectorWindow.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\NameCache.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\NameCache.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/NameCache.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/NameCache.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\PlatformUtils.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\PlatformUtils.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/PlatformUtils.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/PlatformUtils.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\GameLibrary.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\GameLibrary.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/GameLibrary.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/GameLibrary.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\TextEditorWindow.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\TextEditorWindow.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/TextEditorWindow.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/TextEditorWindow.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\TextSyntaxHighlighter.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\TextSyntaxHighlighter.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/TextSyntaxHighlighter.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/TextSyntaxHighlighter.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\AddGameDialog.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\AddGameDialog.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/AddGameDialog.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/AddGameDialog.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\GamePlatform.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\GamePlatform.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/GamePlatform.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/GamePlatform.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\src\\GameIconProvider.cpp.obj -c D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\src\\GameIconProvider.cpp",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/src/GameIconProvider.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/src/GameIconProvider.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\windres.exe -O coff -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -I D:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -I D:/source/ASTra/out-win/generated -I D:/source/ASTra/libs/gf_core/include -I D:/source/ASTra/libs/gf_models/include -I D:/source/ASTra/libs/gf_apt/include -I /libs/gf_platform_ps3/include -I /libs/gf_textures/include -I D:/source/ASTra/out-win/_deps/spdlog-src/include -I D:/source/ASTra/out-win/_deps/nlohmann_json-src/include -I D:/source/ASTra/libs/gf_platform_ps3/include -I D:/source/ASTra/libs/gf_textures/include -I D:/source/ASTra/libs/gf_apt/src/aptconverter -I C:/msys64/ucrt64/include/qt6/QtCore -I C:/msys64/ucrt64/include/qt6 -I C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -I C:/msys64/ucrt64/include/qt6/QtGui -I C:/msys64/ucrt64/include -I C:/msys64/ucrt64/include/qt6/QtWidgets -I C:/msys64/ucrt64/include/qt6/QtConcurrent -I C:/msys64/ucrt64/include/qt6/QtNetwork D:\\source\\ASTra\\apps\\gf_toolsuite_gui\\resources\\astra.rc apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\resources\\astra.rc.obj",
+  "file": "D:/source/ASTra/apps/gf_toolsuite_gui/resources/astra.rc",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/resources/astra.rc.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DMINGW_HAS_SECURE_API=1 -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NEEDS_QMAIN -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DSPDLOG_COMPILED_LIB -DUNICODE -DWIN32 -DWIN64 -DWINVER=0x0A00 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN32_WINNT=0x0A00 -D_WIN64 -ID:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/include -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -I/libs/gf_platform_ps3/include -I/libs/gf_textures/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_platform_ps3/include -ID:/source/ASTra/libs/gf_textures/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -isystem C:/msys64/ucrt64/include/qt6/QtCore -isystem C:/msys64/ucrt64/include/qt6 -isystem C:/msys64/ucrt64/share/qt6/mkspecs/win32-g++ -isystem C:/msys64/ucrt64/include/qt6/QtGui -isystem C:/msys64/ucrt64/include/qt6/QtWidgets -isystem C:/msys64/ucrt64/include/qt6/QtConcurrent -isystem C:/msys64/ucrt64/include/qt6/QtNetwork -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o apps\\gf_toolsuite_gui\\CMakeFiles\\gf_toolsuite_gui.dir\\gf_toolsuite_gui_autogen\\3YJK5W5UP7\\qrc_astra_resources.cpp.obj -c D:\\source\\ASTra\\out-win\\apps\\gf_toolsuite_gui\\gf_toolsuite_gui_autogen\\3YJK5W5UP7\\qrc_astra_resources.cpp",
+  "file": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/3YJK5W5UP7/qrc_astra_resources.cpp",
+  "output": "D:/source/ASTra/out-win/apps/gf_toolsuite_gui/CMakeFiles/gf_toolsuite_gui.dir/gf_toolsuite_gui_autogen/3YJK5W5UP7/qrc_astra_resources.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_version.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_version.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_version.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_version.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_config.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_config.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_config.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_config.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_container_magic.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_container_magic.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_container_magic.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_container_magic.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_features.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_features.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_features.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_features.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_scan_result_json.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_scan_result_json.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_scan_result_json.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_scan_result_json.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_scan_heuristics.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_scan_heuristics.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_scan_heuristics.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_scan_heuristics.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_ast_container_editor.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_ast_container_editor.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_ast_container_editor.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_ast_container_editor.cpp.obj"
+},
+{
+  "directory": "D:/source/ASTra/out-win",
+  "command": "C:\\msys64\\ucrt64\\bin\\c++.exe -DSPDLOG_COMPILED_LIB -ID:/source/ASTra/out-win/generated -ID:/source/ASTra/libs/gf_core/include -ID:/source/ASTra/out-win/_deps/spdlog-src/include -ID:/source/ASTra/out-win/_deps/nlohmann_json-src/include -ID:/source/ASTra/libs/gf_models/include -ID:/source/ASTra/libs/gf_apt/include -ID:/source/ASTra/libs/gf_apt/src/aptconverter -ID:/source/ASTra/out-win/_deps/catch2-src/src/catch2/.. -ID:/source/ASTra/out-win/_deps/catch2-build/generated-includes -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o tests\\unit\\CMakeFiles\\gf_tests.dir\\test_apt_transform.cpp.obj -c D:\\source\\ASTra\\tests\\unit\\test_apt_transform.cpp",
+  "file": "D:/source/ASTra/tests/unit/test_apt_transform.cpp",
+  "output": "D:/source/ASTra/out-win/tests/unit/CMakeFiles/gf_tests.dir/test_apt_transform.cpp.obj"
+}
+]

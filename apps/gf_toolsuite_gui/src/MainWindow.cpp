@@ -1,0 +1,7126 @@
+#include "MainWindow.hpp"
+
+#include <gf/apt/apt_xml.hpp>
+#include <gf/apt/apt_reader.hpp>
+#include <gf/apt/apt_renderer.hpp>
+#include "AstIndexer.hpp"
+#include "PlatformUtils.hpp"
+#include "gf/core/log.hpp"
+#include "gf/core/AstArchive.hpp"
+#include "gf/core/AstContainerEditor.hpp"
+#include "gf/core/safe_write.hpp"
+
+#include <optional>
+#include <filesystem>
+
+#include <QLabel>
+#include <QComboBox>
+#include <QAbstractButton>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QAbstractItemView>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QGridLayout>
+#include <QStatusBar>
+#include <QSplitter>
+#include <QProgressBar>
+#include <QToolBar>
+#include <QDockWidget>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QTextBlock>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QImage>
+#include <QPixmap>
+#include <QFileInfo>
+#include <QScrollArea>
+#include <QShortcut>
+#include <QWheelEvent>
+#include <QEvent>
+#include <QFontDatabase>
+#include <QDir>
+
+#include <tuple>
+#include <QWidget>
+#include <QFrame>
+#include <QtConcurrent>
+#include <QFutureWatcher>
+#include <QMenu>
+#include <QAction>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QInputDialog>
+#include <QCloseEvent>
+#include <QResizeEvent>
+#include <QFileDialog>
+#include <QFile>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QHash>
+#include <QSettings>
+#include <QApplication>
+#include <QClipboard>
+#include <QStyle>
+#include <QMap>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QStackedWidget>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsRectItem>
+#include <QGraphicsSimpleTextItem>
+#include <QGraphicsLineItem>
+#include <QPen>
+#include <QBrush>
+#include <QPainter>
+
+#include "GuiSettings.hpp"
+
+// APT tree item node-type roles (stored in kAptRoleNodeType / +11)
+static constexpr int kAptNodePlain     = 0; // group/root/fallback
+static constexpr int kAptNodeSummary   = 1;
+static constexpr int kAptNodeImport    = 2;
+static constexpr int kAptNodeExport    = 3;
+static constexpr int kAptNodeFrame     = 4;
+static constexpr int kAptNodeCharacter = 5;
+static constexpr int kAptNodeSlice     = 6;
+static constexpr int kAptNodePlacement = 7;
+
+static constexpr int kAptRoleNodeType = Qt::UserRole + 10;
+static constexpr int kAptRoleNodeIndex = Qt::UserRole + 11;
+static constexpr int kAptRoleOwnerKind = Qt::UserRole + 12; // 0=root movie, 1=character sprite/movie
+static constexpr int kAptRoleOwnerIndex = Qt::UserRole + 13;
+static constexpr int kAptRolePlacementIndex = Qt::UserRole + 14;
+
+
+#include <algorithm>
+#include <fstream>
+
+#include <cctype>
+#include <limits>
+#include <stdexcept>
+#include <vector>
+#include <cstring>
+#include <cmath>
+#include <unordered_map>
+#include <unordered_set>
+#include <functional>
+
+#include <zlib.h>
+
+#include <gf/models/rsf.hpp>
+
+#include <gf/textures/dds_decode.hpp>
+#include <gf/textures/ea_dds_rebuild.hpp>
+#include <gf/textures/xpr2_rebuild.hpp>
+
+
+namespace {
+
+class AptPreviewView final : public QGraphicsView {
+ public:
+  using QGraphicsView::QGraphicsView;
+
+ protected:
+  void resizeEvent(QResizeEvent* event) override {
+    QGraphicsView::resizeEvent(event);
+    if (scene()) {
+      fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
+    }
+  }
+};
+
+static const char* ddsFormatName(gf::textures::DdsFormat f) {
+  using gf::textures::DdsFormat;
+  switch (f) {
+    case DdsFormat::DXT1: return "DXT1";
+    case DdsFormat::DXT3: return "DXT3";
+    case DdsFormat::DXT5: return "DXT5";
+    case DdsFormat::ATI1: return "ATI1/BC4";
+    case DdsFormat::ATI2: return "ATI2/BC5";
+    case DdsFormat::RGBA32: return "RGBA32";
+    default: return "Unknown";
+  }
+}
+
+static QString textureInfoPanelText(const QString& containerType, const QString& displayName, const gf::textures::DdsInfo& info, int shownMip) {
+  return QString("%1\n%2\nResolution: %3x%4\nFormat: %5\nMipmaps: %6\nShowing Mip: %7")
+      .arg(containerType.isEmpty() ? QString("Texture") : containerType,
+           displayName.isEmpty() ? QString("Unnamed") : displayName)
+      .arg(info.width)
+      .arg(info.height)
+      .arg(QString::fromLatin1(ddsFormatName(info.format)))
+      .arg(info.mipCount)
+      .arg(shownMip);
+}
+
+
+}
+
+namespace gf::gui {
+
+static QString aptPlacementValueText(const gf::apt::AptPlacement& pl);
+static QString aptPlacementDetailText(const gf::apt::AptPlacement& pl, const QString& ownerLabel, int frameIndex, int placementIndex);
+
+
+static QString aptPlacementValueText(const gf::apt::AptPlacement& pl) {
+  return QString("depth %1").arg(pl.depth);
+}
+
+static QString aptPlacementDetailText(const gf::apt::AptPlacement& pl, const QString& ownerLabel, int frameIndex, int placementIndex) {
+  return QString("Type: Placement\nOwner: %1\nFrame: %2\nPlacement Index: %3\nDepth: %4\nCharacter: %5\nInstance Name: %6\n"
+                 "X: %7\nY: %8\nScale X (a): %9\nRotate Skew 0 (b): %10\nRotate Skew 1 (c): %11\nScale Y (d): %12\nOffset: 0x%13")
+      .arg(ownerLabel)
+      .arg(frameIndex)
+      .arg(placementIndex)
+      .arg(pl.depth)
+      .arg(pl.character)
+      .arg(pl.instance_name.empty() ? QString("(empty)") : QString::fromStdString(pl.instance_name))
+      .arg(pl.transform.x, 0, 'f', 3)
+      .arg(pl.transform.y, 0, 'f', 3)
+      .arg(pl.transform.scale_x, 0, 'f', 3)
+      .arg(pl.transform.rotate_skew_0, 0, 'f', 3)
+      .arg(pl.transform.rotate_skew_1, 0, 'f', 3)
+      .arg(pl.transform.scale_y, 0, 'f', 3)
+      .arg(QString::number(qulonglong(pl.offset), 16).toUpper());
+}
+
+
+// ---- Export / UI helpers ----------------------------------------------------
+static QString normalizeExt(QString ext) {
+  ext = ext.trimmed();
+  if (ext.startsWith('.')) ext = ext.mid(1);
+  return ext;
+}
+
+static QString defaultExtForTypeUpper(const QString& typeUpper) {
+  const QString t = typeUpper.trimmed().toUpper();
+  if (t == "XML") return "xml";
+  if (t == "JSON") return "json";
+  if (t == "INI" || t == "CFG" || t == "CONF") return "ini";
+  if (t == "YAML" || t == "YML") return "yml";
+  if (t == "TXT" || t == "TEXT") return "txt";
+  if (t == "DDS") return "dds";
+  if (t == "PNG") return "png";
+  if (t == "RSF" || t == "RSG") return "rsf";
+  if (t == "APT") return "apt";
+  if (t == "CONST") return "const";
+  if (t == "TX2D") return "tx2d";
+  if (t == "XPR2" || t == "XPR") return "xpr";
+  if (t.startsWith("P3R")) return "dds";
+  if (t == "AST") return "ast";
+  return "bin";
+}
+
+static QString saveFilterForExt(const QString& extNoDot) {
+  const QString ext = normalizeExt(extNoDot);
+  if (ext.isEmpty() || ext == "*") return "All Files (*.*)";
+  // Keep this simple and consistent.
+  return QString("%1 Files (*.%2);;All Files (*.*)")
+      .arg(ext.toUpper())
+      .arg(ext);
+}
+
+
+static QString sanitizeExportName(QString name) {
+  name = name.trimmed();
+  if (name.isEmpty()) return "unnamed";
+  static const QString bad = QStringLiteral(R"(\/:*?"<>|)");
+  for (const QChar ch : bad) name.replace(ch, '_');
+  name.replace('\n', '_');
+  name.replace('\r', '_');
+  return name;
+}
+
+static QString visibleBaseNameForItem(QTreeWidgetItem* item, std::uint32_t fallbackIndex = 0) {
+  if (!item) return QString("entry_%1").arg(fallbackIndex);
+  QString baseName = item->text(0).trimmed();
+  const int paren = baseName.indexOf('(');
+  if (paren >= 0) baseName = baseName.left(paren).trimmed();
+  if (baseName.isEmpty()) baseName = QString("entry_%1").arg(fallbackIndex);
+  QFileInfo fi(baseName);
+  if (!fi.completeBaseName().isEmpty()) baseName = fi.completeBaseName();
+  return sanitizeExportName(baseName);
+}
+
+static QString humanSizeString(quint64 bytes) {
+  static const char* units[] = {"B", "KB", "MB", "GB"};
+  double value = static_cast<double>(bytes);
+  int unit = 0;
+  while (value >= 1024.0 && unit < 3) {
+    value /= 1024.0;
+    ++unit;
+  }
+  if (unit == 0) return QString("%1 %2").arg(bytes).arg(units[unit]);
+  return QString::number(value, 'f', value >= 100.0 ? 0 : (value >= 10.0 ? 1 : 2)) + " " + units[unit];
+}
+
+static QString buildTreeItemTooltip(const QString& displayName,
+                                    const QString& type,
+                                    const QString& info,
+                                    const QString& sourcePath,
+                                    bool embedded,
+                                    quint64 absOffset = 0,
+                                    quint64 maxReadable = 0,
+                                    const QString& extra = QString()) {
+  QStringList lines;
+  lines << (displayName.isEmpty() ? QString("Unnamed") : displayName);
+  if (!type.isEmpty()) lines << QString("Type: %1").arg(type);
+  if (!info.isEmpty()) lines << QString("Info: %1").arg(info);
+  if (embedded) {
+    lines << QString("Embedded Entry: Yes");
+    lines << QString("Offset: 0x%1").arg(absOffset, 0, 16);
+    if (maxReadable > 0) lines << QString("Size: %1 (%2 bytes)").arg(humanSizeString(maxReadable)).arg(maxReadable);
+  }
+  if (!extra.isEmpty()) lines << extra;
+  if (!sourcePath.isEmpty()) lines << QString("Source: %1").arg(QDir::toNativeSeparators(sourcePath));
+  return lines.join('\n');
+}
+
+static QString bytesToEntryName(const std::vector<std::uint8_t>& v, std::uint32_t fallbackIndex) {
+  size_t n = 0;
+  while (n < v.size() && v[n] != 0) ++n;
+  QString name = QString::fromUtf8(reinterpret_cast<const char*>(v.data()), static_cast<int>(n)).trimmed();
+  if (name.isEmpty()) name = QString("entry_%1").arg(fallbackIndex);
+  return name;
+}
+
+static QString detectTypeUpperFromBytes(std::span<const std::uint8_t> bytes) {
+  if (bytes.size() >= 4 && bytes[0] == 'B' && bytes[1] == 'G' && bytes[2] == 'F' && bytes[3] == 'A') return "AST";
+  if (bytes.size() >= 4 && bytes[0] == 'D' && bytes[1] == 'D' && bytes[2] == 'S' && bytes[3] == ' ') return "DDS";
+  if (bytes.size() >= 4 && bytes[0] == 'X' && bytes[1] == 'P' && bytes[2] == 'R' && bytes[3] == '2') return "XPR2";
+  if (bytes.size() >= 3 && bytes[0] == 'R' && bytes[1] == 'S' && bytes[2] == 'F') return "RSF";
+  if (bytes.size() >= 3 && (bytes[0] == 'P' || bytes[0] == 'p') && bytes[1] == '3' && bytes[2] == 'R') return "P3R";
+  // "Apt constant file\x1A..." — EA APT CONST companion
+  if (bytes.size() >= 8 && bytes[0] == 'A' && bytes[1] == 'p' && bytes[2] == 't' && bytes[3] == ' ' &&
+      bytes[4] == 'c' && bytes[5] == 'o' && bytes[6] == 'n' && bytes[7] == 's') return "CONST";
+  if (bytes.size() >= 5 && bytes[0] == '<' && bytes[1] == '?' && bytes[2] == 'x' && bytes[3] == 'm' && bytes[4] == 'l') return "XML";
+  if (!bytes.empty() && bytes[0] == '<') return "XML";
+  return {};
+}
+
+static QString uniqueOutputPath(const QString& outDir, const QString& baseName, const QString& extNoDot) {
+  QDir dir(outDir);
+  const QString ext = normalizeExt(extNoDot);
+  const QString stem = sanitizeExportName(baseName);
+  QString candidate = dir.filePath(ext.isEmpty() ? stem : (stem + "." + ext));
+  if (!QFileInfo::exists(candidate)) return candidate;
+  for (int i = 2; i < 10000; ++i) {
+    candidate = dir.filePath(ext.isEmpty() ? QString("%1_%2").arg(stem).arg(i)
+                                           : QString("%1_%2.%3").arg(stem).arg(i).arg(ext));
+    if (!QFileInfo::exists(candidate)) return candidate;
+  }
+  return candidate;
+}
+
+static QString rsfInfoNameFromBytes(std::span<const std::uint8_t> bytes) {
+  if (bytes.size() < 40) return {};
+  auto be32 = [&](std::size_t off) -> std::uint32_t {
+    if (off + 4 > bytes.size()) return 0;
+    return (std::uint32_t(bytes[off]) << 24) |
+           (std::uint32_t(bytes[off + 1]) << 16) |
+           (std::uint32_t(bytes[off + 2]) << 8) |
+           std::uint32_t(bytes[off + 3]);
+  };
+  if (!(bytes[0] == 'R' && bytes[1] == 'S' && bytes[2] == 'F')) return {};
+  if (!(bytes[16] == 'I' && bytes[17] == 'N' && bytes[18] == 'F' && bytes[19] == 'O')) return {};
+  const std::uint32_t nameLen = be32(32);
+  if (nameLen == 0 || 36 + nameLen > bytes.size()) return {};
+  return QString::fromLatin1(reinterpret_cast<const char*>(bytes.data() + 36), int(nameLen));
+}
+
+static int rsfGeomCountFromBytes(std::span<const std::uint8_t> bytes) {
+  if (bytes.size() < 0x90) return 0;
+  for (std::size_t off = 16; off + 32 <= bytes.size() && off < 512; ) {
+    const bool isGeom = bytes[off] == 'G' && bytes[off + 1] == 'E' && bytes[off + 2] == 'O' && bytes[off + 3] == 'M';
+    const std::uint32_t total = (std::uint32_t(bytes[off + 8]) << 24) |
+                                (std::uint32_t(bytes[off + 9]) << 16) |
+                                (std::uint32_t(bytes[off + 10]) << 8) |
+                                std::uint32_t(bytes[off + 11]);
+    if (isGeom) {
+      return int((std::uint32_t(bytes[off + 16]) << 24) |
+                 (std::uint32_t(bytes[off + 17]) << 16) |
+                 (std::uint32_t(bytes[off + 18]) << 8) |
+                 std::uint32_t(bytes[off + 19]));
+    }
+    if (total == 0 || off + total > bytes.size()) break;
+    off += total;
+  }
+  return 0;
+}
+
+static bool isXmlLikeBytes(const QByteArray& bytes) {
+  const QByteArray t = bytes.trimmed();
+  return t.startsWith("<?xml") || t.startsWith("<");
+}
+
+static QString ensureHasExtension(QString path, const QString& extNoDot) {
+  const QString ext = normalizeExt(extNoDot);
+  if (path.isEmpty() || ext.isEmpty()) return path;
+  QFileInfo fi(path);
+  if (!fi.suffix().isEmpty()) return path;
+  return path + "." + ext;
+}
+
+// Forward declarations for helpers used by status bar updates.
+// (Definitions live further down in this file.)
+static QString formatBytesHuman(qulonglong v);
+
+// ------------------------------
+// Crash-safety helpers
+// ------------------------------
+// QTreeWidgetItem is NOT a QObject, so capturing raw pointers into background-worker
+// completion lambdas can easily become a use-after-free when the tree is rebuilt,
+// when nodes are deleted, or when the app is closing.
+//
+// We avoid dereferencing stale pointers by re-finding the item by a stable cache key
+// (path + embedded offset tuple) at completion time.
+static QString makeTreeCacheKey(QTreeWidgetItem* it) {
+  if (!it) return {};
+  const QString path = it->data(0, Qt::UserRole).toString();
+  if (path.isEmpty()) return {};
+  const bool isEmbedded = it->data(0, Qt::UserRole + 3).toBool();
+  if (!isEmbedded) return path;
+  const qulonglong baseOffset = it->data(0, Qt::UserRole + 1).toULongLong();
+  const qulonglong maxReadable = it->data(0, Qt::UserRole + 2).toULongLong();
+  return QStringLiteral("%1@%2@%3").arg(path).arg(baseOffset).arg(maxReadable);
+}
+
+static QTreeWidgetItem* findTreeItemByCacheKey(QTreeWidget* tree, const QString& cacheKey) {
+  if (!tree || cacheKey.isEmpty()) return nullptr;
+  QVector<QTreeWidgetItem*> stack;
+  stack.reserve(256);
+  for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+    if (auto* t = tree->topLevelItem(i)) stack.push_back(t);
+  }
+  while (!stack.isEmpty()) {
+    QTreeWidgetItem* it = stack.back();
+    stack.pop_back();
+    if (makeTreeCacheKey(it) == cacheKey) return it;
+    for (int c = 0; c < it->childCount(); ++c) {
+      if (auto* ch = it->child(c)) stack.push_back(ch);
+    }
+  }
+  return nullptr;
+}
+
+using gf::gui::kSettingsOrg;
+using gf::gui::kSettingsApp;
+static constexpr const char* kSettingDevMode = "ui/dev_mode";
+static constexpr const char* kSettingEditingEnabled = "ui/editing_enabled";
+
+bool MainWindow::devModeEnabled() const {
+  return m_devMode;
+}
+
+void MainWindow::setDevModeEnabled(bool enabled) {
+  if (m_devMode == enabled) return;
+  m_devMode = enabled;
+  if (m_actDevMode) m_actDevMode->setChecked(enabled);
+  QSettings s(kSettingsOrg, kSettingsApp);
+  s.setValue(kSettingDevMode, enabled);
+  updateStatusBar();
+}
+
+bool MainWindow::editingEnabled() const {
+  return true;
+}
+
+void MainWindow::setEditingEnabled(bool enabled) {
+  Q_UNUSED(enabled);
+  m_editingEnabled = true;
+  if (m_actEnableEditing) {
+    m_actEnableEditing->setChecked(true);
+    m_actEnableEditing->setVisible(false);
+    m_actEnableEditing->setEnabled(false);
+  }
+  if (m_editModeLabel) m_editModeLabel->setText("Editing: ON");
+
+  QSettings s(kSettingsOrg, kSettingsApp);
+  s.setValue(kSettingEditingEnabled, true);
+
+  // Editing is always on in the editor build.
+  statusBar()->showMessage(enabled ? "Editing enabled (unsafe mode)" : "Read-only mode", 4000);
+  if (m_rsfEditAction) {
+    Q_UNUSED(enabled);
+    m_rsfEditAction->setEnabled(false);
+    m_rsfEditAction->setChecked(true);
+    m_rsfEditAction->setVisible(false);
+  }
+  if (!enabled) setRsfDirty(false);
+
+  updateDocumentActions();
+  updateStatusBar();
+}
+
+void MainWindow::updateStatusSelection(QTreeWidgetItem* current) {
+  m_statusContainerPath.clear();
+  m_statusEntryName.clear();
+  m_statusEntryType.clear();
+  m_statusEntrySize = 0;
+  m_statusEntryFlags = 0;
+
+  if (!current) {
+    updateStatusBar();
+    return;
+  }
+
+  const QString path = current->data(0, Qt::UserRole).toString();
+  if (!path.isEmpty()) {
+    m_statusContainerPath = path;
+    m_statusEntryName = current->text(0);
+    m_statusEntryType = current->text(1);
+
+    const QVariant sz = current->data(0, Qt::UserRole + 2);
+    if (sz.isValid()) m_statusEntrySize = sz.toULongLong();
+
+    const QVariant fl = current->data(0, Qt::UserRole + 4);
+    if (fl.isValid()) m_statusEntryFlags = fl.toULongLong();
+  } else {
+    // Folder/bucket nodes: show only label.
+    m_statusEntryName = current->text(0);
+  }
+
+  updateStatusBar();
+}
+
+void MainWindow::updateStatusBar() {
+  if (!m_statusDocLabel || !m_statusEntryLabel || !m_statusMetaLabel || !m_statusDirtyLabel) return;
+
+  // Prefer selection container path, fall back to document path.
+  const QString docPath = !m_statusContainerPath.isEmpty() ? m_statusContainerPath : m_doc.path;
+
+  const QFontMetrics fm(statusBar()->font());
+  const int docMaxPx = 220;
+  const int entryMaxPx = 260;
+
+  if (!docPath.isEmpty()) {
+    const QString fn = QFileInfo(docPath).fileName();
+    m_statusDocLabel->setText(QString("AST: %1").arg(fm.elidedText(fn, Qt::ElideMiddle, docMaxPx)));
+    m_statusDocLabel->setToolTip(QDir::toNativeSeparators(docPath));
+  } else {
+    m_statusDocLabel->setText("AST: (none)");
+    m_statusDocLabel->setToolTip("No container loaded");
+  }
+
+  if (!m_statusEntryName.isEmpty()) {
+    m_statusEntryLabel->setText(QString("Entry: %1").arg(fm.elidedText(m_statusEntryName, Qt::ElideMiddle, entryMaxPx)));
+    m_statusEntryLabel->setToolTip(m_statusEntryName);
+  } else {
+    m_statusEntryLabel->setText("Entry: (none)");
+    m_statusEntryLabel->setToolTip(QString());
+  }
+
+  QString meta;
+  if (!m_statusEntryType.isEmpty()) {
+    meta += QString("Type: %1").arg(m_statusEntryType);
+  }
+  if (m_statusEntrySize > 0) {
+    if (!meta.isEmpty()) meta += "  |  ";
+    meta += QString("Size: %1").arg(formatBytesHuman(m_statusEntrySize));
+  }
+  if (devModeEnabled() && m_statusEntryFlags != 0) {
+    if (!meta.isEmpty()) meta += "  |  ";
+    meta += QString("Flags: 0x%1").arg(QString::number(m_statusEntryFlags, 16).toUpper());
+  }
+
+  m_statusMetaLabel->setText(meta);
+  m_statusMetaLabel->setVisible(!meta.isEmpty());
+
+  m_statusDirtyLabel->setText(m_doc.dirty ? "Dirty" : "");
+  m_statusDirtyLabel->setToolTip(m_doc.dirty ? "Unsaved changes" : "");
+  m_statusDirtyLabel->setVisible(m_doc.dirty);
+}
+
+void MainWindow::showErrorDialog(const QString& title,
+                                 const QString& message,
+                                 const QString& details,
+                                 bool noChangesSaved) {
+  QMessageBox box(this);
+  box.setIcon(QMessageBox::Warning);
+  box.setWindowTitle(title);
+
+  QString text = message;
+  if (noChangesSaved) {
+    if (!text.endsWith('\n')) text += '\n';
+    text += "\nNo changes were saved.";
+  }
+  box.setText(text);
+  if (!details.isEmpty()) box.setDetailedText(details);
+  box.exec();
+}
+
+void MainWindow::showInfoDialog(const QString& title, const QString& message) {
+  QMessageBox::information(this, title, message);
+}
+
+void MainWindow::toastOk(const QString& message) {
+  if (statusBar()) statusBar()->showMessage(message, 3000);
+}
+
+static QString cacheIdFromSeed(const QString& seed) {
+  const QByteArray h = QCryptographicHash::hash(seed.toUtf8(), QCryptographicHash::Sha1).toHex();
+  return QString::fromLatin1(h);
+}
+
+// Stable key for caching metadata about embedded entries.
+// Deterministic across runs for the same container file.
+static QString cacheKeyForEmbedded(quint64 absOffset, std::uint64_t compressedSize) {
+  // Include both absolute file offset and compressed size (offset alone can collide on some malformed indexes).
+  return QString("emb:%1:%2").arg(absOffset).arg(static_cast<qulonglong>(compressedSize));
+}
+
+
+static QString fileNameOnly(const QString& p) {
+  return QFileInfo(p).fileName();
+}
+
+static QString formatBytes(qulonglong v) {
+  return QString("%1 bytes").arg(v);
+}
+
+static QString formatBytesHuman(qulonglong v) {
+  const double dv = static_cast<double>(v);
+  if (v >= 1024ull * 1024ull * 1024ull) return QString::number(dv / (1024.0 * 1024.0 * 1024.0), 'f', 2) + " GB";
+  if (v >= 1024ull * 1024ull) return QString::number(dv / (1024.0 * 1024.0), 'f', 2) + " MB";
+  if (v >= 1024ull) return QString::number(dv / 1024.0, 'f', 1) + " KB";
+  return QString("%1 B").arg(v);
+}
+
+static QString ddsFormatToString(gf::textures::DdsFormat f) {
+  using gf::textures::DdsFormat;
+  switch (f) {
+    case DdsFormat::DXT1: return "DXT1";
+    case DdsFormat::DXT3: return "DXT3";
+    case DdsFormat::DXT5: return "DXT5";
+    case DdsFormat::ATI1: return "ATI1";
+    case DdsFormat::ATI2: return "ATI2";
+    case DdsFormat::RGBA32: return "RGBA32";
+default: return "Unknown";
+  }
+}
+
+static std::vector<std::uint8_t> p3rToDds(std::span<const std::uint8_t> in) {
+  std::vector<std::uint8_t> out(in.begin(), in.end());
+  if (out.size() >= 4) {
+    out[0] = 'D';
+    out[1] = 'D';
+    out[2] = 'S';
+    out[3] = ' '; // "DDS "
+  }
+  return out;
+}
+
+static std::vector<std::uint8_t> ddsToP3r(std::span<const std::uint8_t> in, std::uint8_t p3rVerByte = 0x02) {
+  std::vector<std::uint8_t> out(in.begin(), in.end());
+  if (out.size() >= 4 && out[0] == 'D' && out[1] == 'D' && out[2] == 'S' && out[3] == ' ') {
+    out[0] = 'P';
+    out[1] = '3';
+    out[2] = 'R';
+    out[3] = p3rVerByte;
+  }
+  return out;
+}
+
+// Many EA textures (including some P3R payloads) store only an EA header + blocks
+// without a standard DDS header. For those, rebuild a proper DDS blob first.
+static std::vector<std::uint8_t> maybe_rebuild_ea_dds(std::span<const std::uint8_t> bytes, std::uint32_t astFlags = 0) {
+  try {
+    // If it already looks like a DDS header, just return it.
+    if (bytes.size() >= 4 && bytes[0] == 'D' && bytes[1] == 'D' && bytes[2] == 'S' && bytes[3] == ' ') {
+      return std::vector<std::uint8_t>(bytes.begin(), bytes.end());
+    }
+    gf::textures::EaDdsInfo info{};
+    if (auto rebuilt = gf::textures::rebuild_ea_dds(bytes, astFlags, &info)) {
+      if (rebuilt->size() >= 4 && (*rebuilt)[0] == 'D' && (*rebuilt)[1] == 'D' && (*rebuilt)[2] == 'S' && (*rebuilt)[3] == ' ') {
+        return *rebuilt;
+      }
+    }
+  } catch (...) {
+  }
+  return {};
+}
+
+static std::optional<gf::textures::DdsInfo> tryParseTextureDdsInfo(std::span<const std::uint8_t> bytes, std::uint32_t astFlags = 0) {
+  try {
+    if (bytes.size() >= 4 && bytes[0] == 'D' && bytes[1] == 'D' && bytes[2] == 'S' && bytes[3] == ' ') {
+      return gf::textures::parse_dds_info(bytes);
+    }
+
+    if (bytes.size() >= 3 &&
+        ((bytes[0] == 'p' && bytes[1] == '3' && bytes[2] == 'R') ||
+         (bytes[0] == 'P' && bytes[1] == '3' && bytes[2] == 'R'))) {
+      auto rebuilt = p3rToDds(bytes);
+      if (auto info = gf::textures::parse_dds_info(std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size())); info.has_value()) {
+        return info;
+      }
+    }
+
+    auto rebuilt = maybe_rebuild_ea_dds(bytes, astFlags);
+    if (!rebuilt.empty()) {
+      return gf::textures::parse_dds_info(std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size()));
+    }
+  } catch (...) {
+  }
+  return std::nullopt;
+}
+
+static QString ddsInfoSummary(const gf::textures::DdsInfo& info) {
+  return QString("%1x%2 (%3, %4 mip%5)")
+      .arg(info.width)
+      .arg(info.height)
+      .arg(ddsFormatToString(info.format))
+      .arg(info.mipCount)
+      .arg(info.mipCount == 1 ? "" : "s");
+}
+
+static bool looks_like_zlib_cmf_flg(std::uint8_t cmf, std::uint8_t flg) {
+  const int cm = (cmf & 0x0F);
+  const int cinfo = (cmf >> 4);
+  const bool fdict = ((flg & 0x20) != 0);
+  if (cm != 8) return false;
+  if (cinfo > 7) return false;
+  if (fdict) return false;
+  const int v = (static_cast<int>(cmf) << 8) | static_cast<int>(flg);
+  return (v % 31) == 0;
+}
+
+static std::vector<std::uint8_t> zlib_inflate_unknown_size(std::span<const std::uint8_t> in) {
+  z_stream zs{};
+  zs.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(in.data()));
+  zs.avail_in = static_cast<uInt>(std::min<std::size_t>(in.size(), static_cast<std::size_t>(std::numeric_limits<uInt>::max())));
+
+  int rc = ::inflateInit2(&zs, 15);
+  if (rc != Z_OK) throw std::runtime_error("inflateInit2 failed");
+
+  std::vector<std::uint8_t> out;
+  out.reserve(in.size() * 2 + 1024);
+  std::uint8_t tmp[64 * 1024];
+  while (true) {
+    zs.next_out = reinterpret_cast<Bytef*>(tmp);
+    zs.avail_out = static_cast<uInt>(sizeof(tmp));
+    rc = ::inflate(&zs, Z_NO_FLUSH);
+    const std::size_t produced = sizeof(tmp) - zs.avail_out;
+    if (produced) out.insert(out.end(), tmp, tmp + produced);
+    if (rc == Z_STREAM_END) break;
+    if (rc != Z_OK) { ::inflateEnd(&zs); throw std::runtime_error("inflate failed"); }
+  }
+  ::inflateEnd(&zs);
+  return out;
+}
+
+static std::vector<std::uint8_t> read_file_range(const QString& path, std::uint64_t offset, std::uint64_t size) {
+  std::ifstream f(path.toStdString(), std::ios::binary);
+  if (!f) return {};
+  f.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+  std::vector<std::uint8_t> buf;
+  buf.resize(static_cast<std::size_t>(size));
+  f.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(size));
+  const auto got = f.gcount();
+  if (got <= 0) return {};
+  buf.resize(static_cast<std::size_t>(got));
+  return buf;
+}
+
+static std::vector<std::uint8_t> read_payload_maybe_inflate(const QString& path, std::uint64_t absOffset, std::uint64_t compSize) {
+  auto stored = read_file_range(path, absOffset, compSize);
+  if (stored.size() >= 2 && looks_like_zlib_cmf_flg(stored[0], stored[1])) {
+    try {
+      return zlib_inflate_unknown_size(std::span<const std::uint8_t>(stored.data(), stored.size()));
+    } catch (...) {
+      return stored;
+    }
+  }
+  return stored;
+}
+
+static std::string trim_ext_and_path(std::string s) {
+  // normalize separators
+  for (auto& ch : s) {
+    if (ch == '\\') ch = '/';
+  }
+  const auto slash = s.find_last_of('/');
+  if (slash != std::string::npos) s = s.substr(slash + 1);
+  const auto dot = s.find_last_of('.');
+  if (dot != std::string::npos) s = s.substr(0, dot);
+  return s;
+}
+
+static std::vector<std::string> extract_ident_strings(std::span<const std::uint8_t> bytes,
+                                                      std::size_t minLen = 4,
+                                                      std::size_t maxLen = 48) {
+  std::vector<std::string> out;
+  out.reserve(64);
+  std::string cur;
+  auto flush = [&]() {
+    if (cur.size() >= minLen && cur.size() <= maxLen) out.push_back(cur);
+    cur.clear();
+  };
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    const unsigned char c = bytes[i];
+    const bool ok = (std::isalnum(c) != 0) || c == '_' || c == '/' || c == '\\' || c == '.';
+    if (ok) {
+      if (cur.size() < maxLen + 8) cur.push_back(static_cast<char>(c));
+    } else {
+      flush();
+    }
+  }
+  flush();
+  return out;
+}
+
+static std::string pick_best_apt_name(std::span<const std::uint8_t> payload) {
+  // Heuristic: prefer exported symbol-ish names found in string pools.
+  const auto strs = extract_ident_strings(payload, 4, 32);
+  std::unordered_map<std::string, int> score;
+  score.reserve(strs.size());
+
+  auto isGood = [](const std::string& s) {
+    if (s.size() < 4 || s.size() > 32) return false;
+    if (!(std::isalpha(static_cast<unsigned char>(s[0])))) return false;
+    // avoid obvious junk
+    if (s == "constantpool" || s == "movieclip" || s == "exports" || s == "frames") return false;
+    return true;
+  };
+
+  for (const auto& s : strs) {
+    std::string t = trim_ext_and_path(s);
+    if (!isGood(t)) continue;
+    int add = 1;
+    if (t.find("UI") != std::string::npos) add += 2;
+    if (t.find("Score") != std::string::npos || t.find("score") != std::string::npos) add += 2;
+    if (std::isupper(static_cast<unsigned char>(t[0]))) add += 1;
+    score[t] += add;
+  }
+
+  std::string best;
+  int bestScore = 0;
+  for (const auto& kv : score) {
+    if (kv.second > bestScore) {
+      bestScore = kv.second;
+      best = kv.first;
+    }
+  }
+  return best;
+}
+
+struct FriendlyOverrides {
+  std::unordered_map<std::uint32_t, std::string> byEntryIndex;
+};
+
+static FriendlyOverrides build_friendly_overrides_v2(const gf::core::AstArchive::Index& idx,
+                                                     const QString& parentPath,
+                                                     std::uint64_t baseOffset) {
+  FriendlyOverrides ov;
+
+  // ---- RSF: texture filename/name list
+  std::vector<std::string> rsfTextureNames;
+  rsfTextureNames.reserve(256);
+
+  // ---- APT: per-entry label
+  for (const auto& e : idx.entries) {
+    if (e.type_hint != "RSF") continue;
+    const std::uint64_t abs = baseOffset + e.data_offset;
+    const auto payload = read_payload_maybe_inflate(parentPath, abs, e.compressed_size);
+    if (payload.empty()) continue;
+    const auto docOpt = gf::models::rsf::parse(std::span<const std::uint8_t>(payload.data(), payload.size()));
+    if (!docOpt) continue;
+    for (const auto& t : docOpt->textures) {
+      std::string s = !t.filename.empty() ? t.filename : t.name;
+      s = trim_ext_and_path(s);
+      if (!s.empty()) rsfTextureNames.push_back(s);
+    }
+  }
+
+  // Map RSF texture list -> unnamed DDS entries in appearance order.
+  if (!rsfTextureNames.empty()) {
+    std::size_t nameIt = 0;
+    for (const auto& e : idx.entries) {
+      if (nameIt >= rsfTextureNames.size()) break;
+      const bool isDds = (e.type_hint == "DDS") || (e.ext_hint == ".dds");
+      if (!isDds) continue;
+      const bool alreadyNamed = (!e.display_name.empty() || !e.name.empty());
+      if (alreadyNamed) continue;
+      ov.byEntryIndex[e.index] = rsfTextureNames[nameIt++];
+    }
+  }
+
+  // APT naming: use embedded string pools to pick best export-ish identifier.
+  for (const auto& e : idx.entries) {
+    const bool isApt = (e.type_hint == "APT" || e.type_hint == "CONST") || (e.ext_hint == ".apt" || e.ext_hint == ".const");
+    if (!isApt) continue;
+    const bool alreadyNamed = (!e.display_name.empty() || !e.name.empty());
+    if (alreadyNamed) continue;
+    const std::uint64_t abs = baseOffset + e.data_offset;
+    const auto payload = read_payload_maybe_inflate(parentPath, abs, e.compressed_size);
+    if (payload.empty()) continue;
+    const std::string best = pick_best_apt_name(std::span<const std::uint8_t>(payload.data(), payload.size()));
+    if (!best.empty()) ov.byEntryIndex[e.index] = best;
+  }
+
+  return ov;
+}
+
+static bool isLikelyQklAstPath(const QString& path) {
+  const QString base = QFileInfo(path).fileName().toLower();
+  return base.startsWith("qkl_") && base.endsWith(".ast");
+}
+
+static bool isQklStyleFriendlyBase(const QString& base) {
+  const QString trimmed = base.trimmed().toLower();
+  return trimmed.startsWith("qkl_");
+}
+
+static bool isBinaryRsfBytes(const QByteArray& bytes) {
+  return bytes.size() >= 4 && bytes.mid(0, 4) == QByteArray("RSF\0", 4);
+}
+
+static QIcon loadFileTypeIcon(const QString& typeKey, bool folder = false) {
+  const QString normalized = folder ? QStringLiteral("folder") : typeKey.trimmed().toLower();
+  static QMap<QString, QIcon> cache;
+  const QString cacheKey = (folder ? QStringLiteral("folder") : QStringLiteral("file:")) + normalized;
+  auto it = cache.find(cacheKey);
+  if (it != cache.end()) return it.value();
+
+  const QString appDir = QCoreApplication::applicationDirPath();
+  const QStringList bases = {
+      appDir + QStringLiteral("/game_icons/filetypes"),
+      appDir + QStringLiteral("/game_icons"),
+      QDir::currentPath() + QStringLiteral("/game_icons/filetypes"),
+      QDir::currentPath() + QStringLiteral("/game_icons")
+  };
+  const QStringList exts = {QStringLiteral("png"), QStringLiteral("svg"), QStringLiteral("ico"), QStringLiteral("webp"), QStringLiteral("jpg"), QStringLiteral("jpeg")};
+
+  QIcon icon;
+  for (const QString& base : bases) {
+    for (const QString& ext : exts) {
+      const QString candidate = base + QLatin1Char('/') + normalized + QLatin1Char('.') + ext;
+      if (QFileInfo::exists(candidate)) {
+        icon = QIcon(candidate);
+        if (!icon.isNull()) break;
+      }
+      const QString upperCandidate = base + QLatin1Char('/') + normalized.toUpper() + QLatin1Char('.') + ext;
+      if (QFileInfo::exists(upperCandidate)) {
+        icon = QIcon(upperCandidate);
+        if (!icon.isNull()) break;
+      }
+    }
+    if (!icon.isNull()) break;
+  }
+
+  if (icon.isNull()) {
+    QStyle* st = QApplication::style();
+    if (st) {
+      if (folder) icon = st->standardIcon(QStyle::SP_DirIcon);
+      else if (normalized == QStringLiteral("ast")) icon = st->standardIcon(QStyle::SP_DriveHDIcon);
+      else if (normalized == QStringLiteral("rsf") || normalized == QStringLiteral("xml")) icon = st->standardIcon(QStyle::SP_FileDialogDetailedView);
+      else if (normalized == QStringLiteral("p3r") || normalized == QStringLiteral("dds") || normalized == QStringLiteral("xpr") || normalized == QStringLiteral("xpr2")) icon = st->standardIcon(QStyle::SP_FileIcon);
+      else if (normalized == QStringLiteral("zlib")) icon = st->standardIcon(QStyle::SP_DialogSaveButton);
+      else icon = st->standardIcon(QStyle::SP_FileIcon);
+    }
+  }
+
+  cache.insert(cacheKey, icon);
+  return icon;
+}
+
+static void applyItemIcon(QTreeWidgetItem* item, const QString& /*typeKey*/, bool /*folder*/ = false) {
+  if (!item) return;
+  // Performance mode default: skip per-item icons in very large AST trees.
+  item->setIcon(0, QIcon());
+}
+
+static QTreeWidgetItem* ensureGroup(QTreeWidgetItem* parent, const QString& name) {
+  if (!parent) return nullptr;
+  for (int i = 0; i < parent->childCount(); ++i) {
+    auto* c = parent->child(i);
+    if (c && c->text(0) == name && c->data(0, Qt::UserRole + 50).toBool()) { applyItemIcon(c, "FOLDER", true); return c; }
+  }
+  auto* g = new QTreeWidgetItem(QStringList() << name << "" << "");
+  g->setFlags(g->flags() & ~Qt::ItemIsSelectable);
+  g->setData(0, Qt::UserRole + 50, true); // group marker
+  applyItemIcon(g, "FOLDER", true);
+  parent->addChild(g);
+  return g;
+}
+
+static QString deriveUiGroupFromExportBase(QString base) {
+  base = base.trimmed();
+
+  // Strip "(File_XXXXX...)" suffix if still present.
+  base = base.section('(', 0, 0).trimmed();
+
+  // Strip file extension only if it looks like a real extension at the end.
+  if (base.endsWith(".ast", Qt::CaseInsensitive)) base.chop(4);
+  else if (base.endsWith(".const", Qt::CaseInsensitive)) base.chop(5);
+  else if (base.endsWith(".apt", Qt::CaseInsensitive)) base.chop(4);
+
+  const QString lower = base.toLower();
+
+  // Conservative domain grouping. Expand later as we learn more namespaces.
+  if (lower.startsWith("ncaa.art.dynamo.") || lower.startsWith("packages.ncaa.art.dynamo."))
+    return "Dynamo UI";
+  if (lower.startsWith("packages.ncaa.art."))
+    return "UI Packages";
+  if (lower.startsWith("ncaa.art."))
+    return "UI (ncaa.art)";
+
+  return "UI (Other)";
+}
+
+static QString classifyEmbeddedIndexKind(const gf::core::AstArchive::Index& idx) {
+  std::size_t tex = 0, ui = 0, audio = 0, models = 0, other = 0;
+  for (const auto& e : idx.entries) {
+    const std::string t = e.type_hint;
+    if (t == "DDS" || t == "P3R" || t == "XPR" || t == "XPR2") ++tex;
+    else if (t == "APT" || t == "CONST" || t == "XML") ++ui;
+    else if (t == "OGG" || t == "RIFF") ++audio;
+    else if (t == "RSF" || t == "RSG" || t == "STRM") ++models;
+    else ++other;
+  }
+  const std::size_t maxv = std::max({tex, ui, audio, models, other});
+  if (maxv == 0) return "Misc";
+  if (maxv == tex) return "Textures";
+  if (maxv == ui) return "UI";
+  if (maxv == audio) return "Audio";
+  if (maxv == models) return "Models";
+  return "Misc";
+
+
+
+}
+
+
+static QString trimTextureFriendlyBase(QString b) {
+  const int dot = b.lastIndexOf('.');
+  if (dot > 0) b = b.left(dot);
+  auto trimSuffix = [&](const QString& sfx) {
+    if (b.endsWith(sfx, Qt::CaseInsensitive)) b.chop(sfx.size());
+  };
+  trimSuffix("_COL");
+  trimSuffix("_VECTOR");
+  trimSuffix("_NORM");
+  trimSuffix("_TRAN");
+  trimSuffix("_ALPHA");
+  trimSuffix("_MASK");
+  return b.trimmed();
+}
+
+static std::tuple<QString, QString, bool> deriveFriendlyAstContainerMeta(const gf::core::AstArchive::Index& idx) {
+  QStringList rsfBases;
+  QStringList texBases;
+  QStringList aptBases;
+  bool hasApt = false;
+
+  for (const auto& ee : idx.entries) {
+    const QString t = ee.type_hint.empty() ? QString() : QString::fromStdString(ee.type_hint).toUpper();
+    const QString n = !ee.display_name.empty() ? QString::fromStdString(ee.display_name)
+                      : (!ee.name.empty() ? QString::fromStdString(ee.name) : QString());
+
+    if (t == "APT" || t == "CONST" || n.endsWith(".apt", Qt::CaseInsensitive) || n.endsWith(".const", Qt::CaseInsensitive)) {
+      hasApt = true;
+      QString b = n;
+      if (b.endsWith(".apt", Qt::CaseInsensitive)) b.chop(4);
+      if (b.endsWith(".const", Qt::CaseInsensitive)) b.chop(6);
+      if (!b.isEmpty() && !b.startsWith("File_", Qt::CaseInsensitive)) aptBases << b;
+    }
+
+    if (t == "RSF" || n.endsWith(".rsf", Qt::CaseInsensitive)) {
+      QString b = n;
+      if (b.endsWith(".rsf", Qt::CaseInsensitive)) b.chop(4);
+      if (!b.isEmpty()) rsfBases << b;
+      continue;
+    }
+
+    if (t == "P3R" || t == "DDS" || t == "XPR" || t == "XPR2" ||
+        n.endsWith(".p3r", Qt::CaseInsensitive) || n.endsWith(".dds", Qt::CaseInsensitive)) {
+      const QString b = trimTextureFriendlyBase(n);
+      if (!b.isEmpty()) texBases << b;
+    }
+  }
+
+  QString chosen;
+  auto mostFrequent = [](const QStringList& vals) -> QString {
+    QHash<QString, int> freq;
+    for (const auto& v : vals) freq[v] += 1;
+    QString best;
+    int bestN = -1;
+    for (auto it = freq.begin(); it != freq.end(); ++it) {
+      if (it.value() > bestN) {
+        bestN = it.value();
+        best = it.key();
+      }
+    }
+    return best;
+  };
+
+  if (!aptBases.isEmpty()) chosen = mostFrequent(aptBases);
+  if (chosen.isEmpty() && !rsfBases.isEmpty()) chosen = mostFrequent(rsfBases);
+  if (chosen.isEmpty() && !texBases.isEmpty()) {
+    chosen = texBases.first();
+    for (const auto& b : texBases) {
+      if (b.size() < chosen.size()) chosen = b;
+    }
+  }
+
+  return {chosen, classifyEmbeddedIndexKind(idx), hasApt};
+}
+
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+  setWindowTitle(m_doc.makeWindowTitle("ASTra", "AST Editor"));
+  setWindowIcon(QIcon(":/icons/astra.png"));
+
+  // Persisted UI toggles
+  {
+    QSettings s(kSettingsOrg, kSettingsApp);
+    m_devMode = s.value(kSettingDevMode, false).toBool();
+    m_editingEnabled = true;
+  }
+
+  buildUi();
+
+  // Tool is always dark-mode (no toggle). We don't force a palette here because
+  // you may already be applying a global dark style in main().
+}
+
+
+void MainWindow::closeEvent(QCloseEvent* e) {
+  // v0.6.4: unify dirty-close prompt with other editors.
+  if (!DocumentLifecycle::maybePromptDiscard(this, m_doc.dirty)) {
+    e->ignore();
+    return;
+  }
+
+  // Persist friendly-name cache so derived AST names survive reopen even if
+  // they were learned during this session and no explicit save path was hit.
+  m_nameCache.save();
+  e->accept();
+}
+
+void MainWindow::resizeEvent(QResizeEvent* e) {
+  QMainWindow::resizeEvent(e);
+  if (m_textureOriginal.isNull() || !m_imageView) return;
+
+  // Only refit if we are on the Texture tab.
+  if (m_viewTabs && m_viewTabs->currentIndex() != 2) return;
+
+  if (m_textureFitToView) applyTextureZoom();
+}
+
+void MainWindow::applyTextureZoom() {
+  if (!m_imageView || m_textureOriginal.isNull()) return;
+
+  if (m_textureFitToView) {
+    const QSize bounds = (m_imageScroll ? m_imageScroll->viewport()->size() : m_imageView->size()) - QSize(12, 12);
+    if (bounds.width() > 32 && bounds.height() > 32) {
+      m_imageView->setPixmap(m_textureOriginal.scaled(bounds, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+      m_imageView->resize(m_imageView->pixmap(Qt::ReturnByValue).size());
+    } else {
+      m_imageView->setPixmap(m_textureOriginal);
+      m_imageView->resize(m_textureOriginal.size());
+    }
+    return;
+  }
+
+  const QSize scaledSize = m_textureOriginal.size() * m_textureZoom;
+  if (scaledSize.width() > 0 && scaledSize.height() > 0) {
+    QPixmap scaled = m_textureOriginal.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    m_imageView->setPixmap(scaled);
+    m_imageView->resize(scaled.size());
+  } else {
+    m_imageView->setPixmap(m_textureOriginal);
+    m_imageView->resize(m_textureOriginal.size());
+  }
+}
+
+void MainWindow::resetTextureZoomToFit() {
+  m_textureFitToView = true;
+  m_textureZoom = 1.0;
+  applyTextureZoom();
+}
+
+void MainWindow::populateTextureMipSelector(int mipCount) {
+  if (!m_textureMipSelector) return;
+  const bool old = m_textureMipSelector->blockSignals(true);
+  m_textureMipSelector->clear();
+  m_currentTextureMipCount = std::max(0, mipCount);
+  for (int i = 0; i < m_currentTextureMipCount; ++i) {
+    m_textureMipSelector->addItem(QString("Mip %1").arg(i), i);
+  }
+  const bool enabled = (m_currentTextureMipCount > 1);
+  m_textureMipSelector->setEnabled(enabled);
+  m_textureMipSelector->setVisible(m_currentTextureMipCount > 0);
+  if (m_currentTextureMipCount > 0) {
+    m_textureMipSelector->setCurrentIndex(std::clamp(m_currentTextureMipShown, 0, m_currentTextureMipCount - 1));
+  }
+  m_textureMipSelector->blockSignals(old);
+}
+
+bool MainWindow::renderCurrentTextureMip(int mipIndex) {
+  if (!m_imageView || m_currentTextureBytes.isEmpty()) return false;
+  const auto bytes = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(m_currentTextureBytes.constData()), static_cast<std::size_t>(m_currentTextureBytes.size()));
+  auto info = gf::textures::parse_dds_info(bytes);
+  if (!info.has_value()) return false;
+  if (mipIndex < 0) mipIndex = 0;
+  if (mipIndex >= static_cast<int>(info->mipCount)) mipIndex = static_cast<int>(info->mipCount) - 1;
+  if (mipIndex < 0) mipIndex = 0;
+  auto img = gf::textures::decode_dds_mip_rgba(bytes, static_cast<std::uint32_t>(mipIndex));
+  if (!img.has_value()) return false;
+
+  const auto& im = img.value();
+  QImage qimg(im.rgba.data(), static_cast<int>(im.width), static_cast<int>(im.height), QImage::Format_RGBA8888);
+  m_textureOriginal = QPixmap::fromImage(qimg.copy());
+  m_imageView->setPixmap(m_textureOriginal);
+  m_currentTextureMipShown = mipIndex;
+  resetTextureZoomToFit();
+  if (m_textureInfo) {
+    m_textureInfo->setText(textureInfoPanelText(m_currentTextureType, m_currentTextureName, *info, mipIndex));
+    m_textureInfo->setVisible(true);
+  }
+  populateTextureMipSelector(static_cast<int>(info->mipCount));
+  return true;
+}
+
+void MainWindow::clearCurrentTextureState() {
+  m_currentTextureBytes.clear();
+  m_currentTextureType.clear();
+  m_currentTextureName.clear();
+  m_currentTextureMipCount = 0;
+  m_currentTextureMipShown = 0;
+  if (m_textureMipSelector) {
+    const bool old = m_textureMipSelector->blockSignals(true);
+    m_textureMipSelector->clear();
+    m_textureMipSelector->setEnabled(false);
+    m_textureMipSelector->setVisible(false);
+    m_textureMipSelector->blockSignals(old);
+  }
+}
+
+void MainWindow::stepTextureZoom(int direction) {
+  if (m_textureOriginal.isNull()) return;
+  m_textureFitToView = false;
+  const double factor = (direction > 0) ? 1.2 : (1.0 / 1.2);
+  m_textureZoom *= factor;
+  if (m_textureZoom < 0.05) m_textureZoom = 0.05;
+  if (m_textureZoom > 32.0) m_textureZoom = 32.0;
+  applyTextureZoom();
+}
+
+bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
+  if ((obj == m_imageView || (m_imageScroll && obj == m_imageScroll->viewport())) && event) {
+    if (event->type() == QEvent::Wheel) {
+      auto* we = static_cast<QWheelEvent*>(event);
+      if (we->modifiers() & Qt::ControlModifier) {
+        stepTextureZoom(we->angleDelta().y() >= 0 ? +1 : -1);
+        we->accept();
+        return true;
+      }
+    }
+  }
+  return QMainWindow::eventFilter(obj, event);
+}
+
+void MainWindow::setRsfDirty(bool dirty) {
+  m_rsfDirty = dirty;
+  if (m_rsfApplyAction) m_rsfApplyAction->setEnabled(m_rsfEditMode && dirty && m_rsfCurrentDoc.has_value());
+  if (m_statusDirtyLabel && m_viewTabs && m_viewTabs->currentWidget() == m_rsfTab) m_statusDirtyLabel->setText(dirty ? "Dirty" : "");
+}
+
+void MainWindow::refreshRsfMaterialsTable() {
+  if (!m_rsfMaterialsTable) return;
+  const int prevRow = std::max(0, m_rsfMaterialsTable->currentRow());
+  m_rsfUpdatingUi = true;
+  m_rsfMaterialsTable->setRowCount(0);
+  if (m_rsfCurrentDoc) {
+    for (int i = 0; i < int(m_rsfCurrentDoc->materials.size()); ++i) {
+      const auto& m = m_rsfCurrentDoc->materials[std::size_t(i)];
+      m_rsfMaterialsTable->insertRow(i);
+      auto* num = new QTableWidgetItem(QString::number(i));
+      num->setData(Qt::UserRole, i);
+      num->setFlags(num->flags() & ~Qt::ItemIsEditable);
+      m_rsfMaterialsTable->setItem(i, 0, num);
+      m_rsfMaterialsTable->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(m.name)));
+      m_rsfMaterialsTable->setItem(i, 2, new QTableWidgetItem(QString::fromStdString(m.sub_name)));
+    }
+    if (!m_rsfCurrentDoc->materials.empty()) m_rsfMaterialsTable->selectRow(std::min(prevRow, int(m_rsfCurrentDoc->materials.size()) - 1));
+  }
+  m_rsfUpdatingUi = false;
+}
+
+void MainWindow::refreshRsfParamsTable(int materialIndex) {
+  if (!m_rsfParamsTable) return;
+  m_rsfUpdatingUi = true;
+  m_rsfParamsTable->setRowCount(0);
+  if (m_rsfCurrentDoc && materialIndex >= 0 && materialIndex < int(m_rsfCurrentDoc->materials.size())) {
+    const auto& m = m_rsfCurrentDoc->materials[std::size_t(materialIndex)];
+    int prow = 0;
+    for (const auto& p : m.params) {
+      QStringList vals;
+      QString varType = QString::fromStdString(p.var_type);
+      QString paramName = p.names.empty() ? QString() : QString::fromStdString(p.names.front());
+      std::visit([&](auto&& val) {
+        using T = std::decay_t<decltype(val)>;
+        if constexpr (std::is_same_v<T, gf::models::rsf::param_tex>) vals << QString::number(val.texture_index);
+        else if constexpr (std::is_same_v<T, gf::models::rsf::param_vec>) for (float f : val.values) vals << QString::number(f);
+        else if constexpr (std::is_same_v<T, gf::models::rsf::param_bool>) vals << (val.value ? "1" : "0");
+        else if constexpr (std::is_same_v<T, gf::models::rsf::param_i32>) vals << QString::number(val.value);
+        else if constexpr (std::is_same_v<T, gf::models::rsf::param_f32>) vals << QString::number(val.value);
+      }, p.value);
+      m_rsfParamsTable->insertRow(prow);
+      auto* idx = new QTableWidgetItem(QString::number(prow)); idx->setFlags(idx->flags() & ~Qt::ItemIsEditable);
+      auto* type = new QTableWidgetItem(varType); type->setFlags(type->flags() & ~Qt::ItemIsEditable);
+      m_rsfParamsTable->setItem(prow, 0, idx);
+      m_rsfParamsTable->setItem(prow, 1, type);
+      m_rsfParamsTable->setItem(prow, 2, new QTableWidgetItem(paramName));
+      for (int i = 0; i < 4; ++i) m_rsfParamsTable->setItem(prow, 3 + i, new QTableWidgetItem(i < vals.size() ? vals[i] : QString()));
+      ++prow;
+    }
+  }
+  m_rsfUpdatingUi = false;
+}
+
+void MainWindow::pullRsfUiIntoDocument() {
+  if (!m_rsfCurrentDoc || !m_rsfMaterialsTable || !m_rsfParamsTable) return;
+  for (int i = 0; i < m_rsfMaterialsTable->rowCount() && i < int(m_rsfCurrentDoc->materials.size()); ++i) {
+    auto& m = m_rsfCurrentDoc->materials[std::size_t(i)];
+    if (auto* it = m_rsfMaterialsTable->item(i, 1)) m.name = it->text().toStdString();
+    if (auto* it = m_rsfMaterialsTable->item(i, 2)) m.sub_name = it->text().toStdString();
+  }
+  const int row = m_rsfMaterialsTable->currentRow();
+  if (row < 0 || row >= int(m_rsfCurrentDoc->materials.size())) return;
+  auto& mat = m_rsfCurrentDoc->materials[std::size_t(row)];
+  for (int prow = 0; prow < m_rsfParamsTable->rowCount() && prow < int(mat.params.size()); ++prow) {
+    auto& p = mat.params[std::size_t(prow)];
+    if (auto* it = m_rsfParamsTable->item(prow, 2)) {
+      if (p.names.empty()) p.names.push_back(it->text().toStdString()); else p.names[0] = it->text().toStdString();
+    }
+    auto cell = [&](int col) -> QString { auto* it = m_rsfParamsTable->item(prow, col); return it ? it->text().trimmed() : QString(); };
+    if (std::holds_alternative<gf::models::rsf::param_tex>(p.value)) { bool ok=false; auto v=cell(3).toUInt(&ok); if (ok) std::get<gf::models::rsf::param_tex>(p.value).texture_index=v; }
+    else if (std::holds_alternative<gf::models::rsf::param_vec>(p.value)) { auto& vals=std::get<gf::models::rsf::param_vec>(p.value).values; for (int i=0;i<int(vals.size()) && i<4;++i){ bool ok=false; float f=cell(3+i).toFloat(&ok); if(ok) vals[std::size_t(i)]=f; } }
+    else if (std::holds_alternative<gf::models::rsf::param_bool>(p.value)) { const auto v=cell(3).toLower(); std::get<gf::models::rsf::param_bool>(p.value).value=(v=="1"||v=="true"||v=="yes"); }
+    else if (std::holds_alternative<gf::models::rsf::param_i32>(p.value)) { bool ok=false; int v=cell(3).toInt(&ok); if(ok) std::get<gf::models::rsf::param_i32>(p.value).value=v; }
+    else if (std::holds_alternative<gf::models::rsf::param_f32>(p.value)) { bool ok=false; float v=cell(3).toFloat(&ok); if(ok) std::get<gf::models::rsf::param_f32>(p.value).value=v; }
+  }
+}
+
+bool MainWindow::applyRsfChanges() {
+  if (!m_rsfCurrentDoc || m_rsfOriginalBytes.isEmpty()) return false;
+  pullRsfUiIntoDocument();
+  std::vector<std::uint8_t> original(static_cast<std::size_t>(m_rsfOriginalBytes.size()));
+  std::memcpy(original.data(), m_rsfOriginalBytes.constData(), static_cast<std::size_t>(m_rsfOriginalBytes.size()));
+  const auto rebuilt = gf::models::rsf::rebuild(*m_rsfCurrentDoc, std::span<const std::uint8_t>(original.data(), original.size()));
+  if (rebuilt.empty() || !gf::models::rsf::parse(std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size())).has_value()) {
+    showErrorDialog("Apply RSF", "Failed to rebuild a valid RSF.");
+    return false;
+  }
+  if (m_rsfSourceEmbedded) {
+    std::string err;
+    auto ed = gf::core::AstContainerEditor::load(m_rsfSourcePath.toStdString(), &err);
+    if (!ed.has_value()) { showErrorDialog("Apply RSF", "Failed to load container.", QString::fromStdString(err), true); return false; }
+    if (!ed->replaceEntryBytes(m_rsfSourceEntryIndex, std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size()), gf::core::AstContainerEditor::ReplaceMode::PreserveZlibIfPresent, &err) || !ed->writeInPlace(&err, true)) {
+      showErrorDialog("Apply RSF", "Failed to write updated RSF.", QString::fromStdString(err), true); return false;
+    }
+  } else {
+    gf::core::SafeWriteOptions opt; opt.make_backup = true;
+    const auto r = gf::core::safe_write_bytes(m_rsfSourcePath.toStdString(), std::span<const std::byte>(reinterpret_cast<const std::byte*>(rebuilt.data()), rebuilt.size()), opt);
+    if (!r.ok) { showErrorDialog("Apply RSF", "Failed to write RSF file.", QString::fromStdString(r.message), true); return false; }
+  }
+  m_rsfOriginalBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
+  setRsfDirty(false);
+  statusBar()->showMessage("Applied RSF changes (backup created)", 3500);
+  if (m_tree && m_tree->currentItem()) showViewerForItem(m_tree->currentItem());
+  return true;
+}
+
+void MainWindow::setMode(Mode m) {
+  m_mode = m;
+  updateWindowTitle();
+}
+
+void MainWindow::openStandaloneAst(const QString& astPath) {
+  setMode(Mode::Standalone);
+  m_cacheId = cacheIdFromSeed(astPath);
+  m_nameCache.loadForGame(m_cacheId);
+  m_doc.path = astPath;
+  m_liveAstEditor.reset();
+  m_liveAstPath.clear();
+  m_lastReplaceUndo = LastReplaceUndo{};
+  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(false);
+  setDirty(false);
+  ++m_treeToken;
+  m_tree->clear();
+
+  // Standalone view: show single AST root (no parsing yet).
+  auto* root = new QTreeWidgetItem(m_tree, QStringList() << QFileInfo(astPath).fileName() << "");
+  root->setData(0, Qt::UserRole, astPath);
+  root->setToolTip(0, buildTreeItemTooltip(QFileInfo(astPath).fileName(), "AST", "Root Container", astPath, false));
+  root->setToolTip(1, QDir::toNativeSeparators(astPath));
+  root->setToolTip(2, QDir::toNativeSeparators(astPath));
+  root->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+  root->addChild(new QTreeWidgetItem(QStringList() << "Expand to parse..." << ""));
+
+  updateStatusSelection(root);
+  showViewerForItem(root);
+  updateDocumentActions();
+}
+
+void MainWindow::openGame(const QString& displayName,
+                          const QString& rootPath,
+                          const QString& baseContentDir,
+                          const QString& updateContentDir) {
+  setMode(Mode::Game);
+  m_lastGameDisplayName = displayName;
+  m_lastGameRootPath = rootPath;
+  m_lastGameBaseContentDir = baseContentDir;
+  m_lastGameUpdateContentDir = updateContentDir;
+
+  m_cacheId = cacheIdFromSeed(rootPath);
+  m_nameCache.loadForGame(m_cacheId);
+  m_doc.path.clear();
+  m_liveAstEditor.reset();
+  m_liveAstPath.clear();
+  m_lastReplaceUndo = LastReplaceUndo{};
+  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(false);
+  setDirty(false);
+  updateStatusSelection(nullptr);
+  startIndexing(displayName, rootPath, baseContentDir, updateContentDir);
+  updateDocumentActions();
+}
+
+void MainWindow::buildUi() {
+  // ---- Menu bar (v0.6.1 foundation) ----
+  auto* fileMenu = menuBar()->addMenu("File");
+  m_actOpen = fileMenu->addAction("Open…");
+  m_actOpenApt = fileMenu->addAction("Open APT…");
+  m_actSave = fileMenu->addAction("Save");
+  m_actSaveAs = fileMenu->addAction("Save As…");
+  m_actRevert = fileMenu->addAction("Revert");
+  m_actRestoreBackup = fileMenu->addAction("Restore Latest Backup…");
+  fileMenu->addSeparator();
+  fileMenu->addAction("Close", this, &QWidget::close);
+
+  connect(m_actOpen, &QAction::triggered, this, &MainWindow::onOpenFile);
+  connect(m_actOpenApt, &QAction::triggered, this, &MainWindow::onOpenApt);
+  connect(m_actSave, &QAction::triggered, this, &MainWindow::onSave);
+  connect(m_actSaveAs, &QAction::triggered, this, &MainWindow::onSaveAs);
+  connect(m_actRevert, &QAction::triggered, this, &MainWindow::onRevert);
+  connect(m_actRestoreBackup, &QAction::triggered, this, &MainWindow::onRestoreLatestBackup);
+
+  // ---- Tools menu (v0.6.9.1) ----
+  auto* toolsMenu = menuBar()->addMenu("Tools");
+  m_actDevMode = toolsMenu->addAction("Developer Mode");
+  m_actDevMode->setCheckable(true);
+  m_actDevMode->setChecked(devModeEnabled());
+  connect(m_actDevMode, &QAction::toggled, this, &MainWindow::setDevModeEnabled);
+
+  m_actUndoLastReplace = toolsMenu->addAction("Undo Last Replace");
+  m_actUndoLastReplace->setEnabled(false);
+  connect(m_actUndoLastReplace, &QAction::triggered, this, &MainWindow::onUndoLastReplace);
+  toolsMenu->addSeparator();
+  toolsMenu->addAction("Refresh Archive View", this, &MainWindow::refreshCurrentArchiveView);
+
+  // Editing is always enabled in ASTra editor mode.
+  m_actEnableEditing = nullptr;
+
+  // Enabled/disabled by updateDocumentActions().
+  m_actSave->setEnabled(false);
+  m_actRevert->setEnabled(false);
+
+  // ---- Toolbar (GridironForge vibe) ----
+  auto* tb = addToolBar("Main");
+  tb->setMovable(false);
+  tb->setFloatable(false);
+
+  auto* actNew = tb->addAction("New");
+  actNew->setEnabled(false); // stub
+
+  // Mirror menu actions in toolbar for fast access.
+  tb->addAction(m_actOpen);
+  tb->addAction(m_actSave);
+  tb->addAction(m_actSaveAs);
+  tb->addAction(m_actRevert);
+
+  // ---- Status bar ----
+  auto* sb = new QStatusBar(this);
+  setStatusBar(sb);
+  statusBar()->showMessage("Ready");
+
+  // Persistent context (v0.6.20.9)
+  m_statusDocLabel = new QLabel(this);
+  m_statusDocLabel->setText("AST: (none)");
+  m_statusDocLabel->setToolTip("No container loaded");
+  statusBar()->addPermanentWidget(m_statusDocLabel);
+
+  auto* sep1 = new QLabel(" | ", this);
+  statusBar()->addPermanentWidget(sep1);
+
+  m_statusEntryLabel = new QLabel(this);
+  m_statusEntryLabel->setText("Entry: (none)");
+  statusBar()->addPermanentWidget(m_statusEntryLabel);
+
+  auto* sep2 = new QLabel(" | ", this);
+  statusBar()->addPermanentWidget(sep2);
+
+  m_statusMetaLabel = new QLabel(this);
+  m_statusMetaLabel->setText("");
+  m_statusMetaLabel->setVisible(false);
+  statusBar()->addPermanentWidget(m_statusMetaLabel);
+
+  auto* sep3 = new QLabel(" | ", this);
+  statusBar()->addPermanentWidget(sep3);
+
+  m_statusDirtyLabel = new QLabel(this);
+  m_statusDirtyLabel->setText("");
+  m_statusDirtyLabel->setVisible(false);
+  statusBar()->addPermanentWidget(m_statusDirtyLabel);
+
+  auto* sep4 = new QLabel(" | ", this);
+  statusBar()->addPermanentWidget(sep4);
+
+  m_editModeLabel = new QLabel(this);
+  m_editModeLabel->setText("Editing: ON");
+  m_editModeLabel->setToolTip("Read-only by default. Enable Editing to allow replace/save actions.");
+  statusBar()->addPermanentWidget(m_editModeLabel);
+
+  // Progress indicator (top-right)
+  m_parseProgress = new QProgressBar(this);
+  m_parseProgress->setTextVisible(false);
+  m_parseProgress->setFixedWidth(140);
+  m_parseProgress->setVisible(false);
+  statusBar()->addPermanentWidget(m_parseProgress);
+
+  updateStatusBar();
+
+  // ---- Left dock: File Tree + search ----
+  m_treeDock = new QDockWidget("File Tree", this);
+  m_treeDock->setObjectName("dock_file_tree");
+  m_treeDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+  m_treeDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+  auto* dockHost = new QWidget(this);
+  auto* dockLayout = new QVBoxLayout(dockHost);
+  dockLayout->setContentsMargins(8, 8, 8, 8);
+  dockLayout->setSpacing(6);
+
+  m_header = new QLabel("Standalone mode. Use File > Open (not implemented yet).", dockHost);
+  m_header->setWordWrap(true);
+
+  m_search = new QLineEdit(dockHost);
+  m_search->setPlaceholderText("Search (AST name, folder, path)...");
+  connect(m_search, &QLineEdit::textChanged, this, &MainWindow::onSearchChanged);
+
+  m_tree = new QTreeWidget(dockHost);
+  m_tree->setHeaderLabels(QStringList() << "Item" << "Type" << "Info");
+  m_tree->setUniformRowHeights(true);
+  m_tree->setAnimated(false);
+  m_tree->setExpandsOnDoubleClick(false);
+  m_tree->setIconSize(QSize(0, 0));
+  m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+  m_tree->setMouseTracking(true);
+  m_tree->setToolTipDuration(15000);
+  if (m_tree->header()) {
+    m_tree->header()->setStretchLastSection(false);
+    m_tree->header()->setMinimumSectionSize(48);
+    m_tree->setColumnWidth(0, 520);
+    m_tree->setColumnWidth(1, 84);
+    m_tree->setColumnWidth(2, 160);
+  }
+
+  connect(m_tree, &QTreeWidget::itemExpanded, this, &MainWindow::onItemExpanded);
+  connect(m_tree, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onItemDoubleClicked);
+  connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
+  connect(m_tree, &QTreeWidget::currentItemChanged, this, &MainWindow::onCurrentItemChanged);
+
+  dockLayout->addWidget(m_header);
+  dockLayout->addWidget(m_search);
+  dockLayout->addWidget(m_tree, 1);
+  dockHost->setLayout(dockLayout);
+
+  m_treeDock->setWidget(dockHost);
+  m_treeDock->setMinimumWidth(620);
+  addDockWidget(Qt::LeftDockWidgetArea, m_treeDock);
+  resizeDocks({m_treeDock}, {680}, Qt::Horizontal);
+
+  // ---- Central viewer host (no tabs; auto "tool" placeholder) ----
+  m_viewerHost = new QWidget(this);
+  auto* vlayout = new QVBoxLayout(m_viewerHost);
+  vlayout->setContentsMargins(12, 12, 12, 12);
+  vlayout->setSpacing(8);
+
+  m_viewerLabel = new QLabel("Select a file in the tree to view it.", m_viewerHost);
+  m_viewerLabel->setWordWrap(true);
+
+  m_viewTabs = new QTabWidget(m_viewerHost);
+
+  m_hexView = new QPlainTextEdit(m_viewerHost);
+  m_hexView->setReadOnly(true);
+  m_hexView->setLineWrapMode(QPlainTextEdit::NoWrap);
+  QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+  m_hexView->setFont(mono);
+
+  // Text editor tab (basic, in-pane editor)
+  auto* textTab = new QWidget(m_viewerHost);
+  auto* textLayout = new QVBoxLayout(textTab);
+  textLayout->setContentsMargins(0, 0, 0, 0);
+  textLayout->setSpacing(6);
+
+  m_textToolbar = new QToolBar(textTab);
+  m_textToolbar->setIconSize(QSize(16, 16));
+  m_textReloadAction = m_textToolbar->addAction("Reload");
+  m_textOpenExternalAction = m_textToolbar->addAction("Open...");
+  m_textExportAction = m_textToolbar->addAction("Export...");
+  m_textEditAction = m_textToolbar->addAction("Edit");
+  m_textEditAction->setCheckable(true);
+  m_textEditAction->setToolTip("Enable editing for embedded text entries");
+  m_textApplyAction = m_textToolbar->addAction("Apply");
+  m_textApplyAction->setEnabled(false);
+  m_textToolbar->addSeparator();
+  m_textFindAction = m_textToolbar->addAction("Find...");
+  m_textFindAction->setShortcut(QKeySequence::Find);
+  m_textFindNextAction = m_textToolbar->addAction("Next");
+  m_textFindNextAction->setShortcut(QKeySequence::FindNext);
+m_textReplaceAction = m_textToolbar->addAction("Replace...");
+m_textReplaceAction->setShortcut(QKeySequence::Replace);
+m_textGotoLineAction = m_textToolbar->addAction("Go To...");
+m_textGotoLineAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
+  m_textToolbar->addSeparator();
+  m_textWrapAction = m_textToolbar->addAction("Wrap");
+  m_textWrapAction->setCheckable(true);
+  m_textWrapAction->setChecked(false);
+
+  m_textView = new QPlainTextEdit(textTab);
+  m_textView->setReadOnly(false);
+  m_textView->setLineWrapMode(QPlainTextEdit::NoWrap);
+  m_textView->setFont(mono);
+// Ctrl+S should apply changes when in edit mode.
+m_textSaveShortcutAction = new QAction(this);
+m_textSaveShortcutAction->setShortcut(QKeySequence::Save);
+textTab->addAction(m_textSaveShortcutAction);
+
+  textLayout->addWidget(m_textToolbar, 0);
+  textLayout->addWidget(m_textView, 1);
+  textTab->setLayout(textLayout);
+
+  m_textureTab = new QWidget(m_viewerHost);
+  auto* texLayout = new QVBoxLayout(m_textureTab);
+  texLayout->setContentsMargins(0,0,0,0);
+  texLayout->setSpacing(6);
+
+  auto* texInfoRow = new QHBoxLayout();
+  texInfoRow->setContentsMargins(6, 4, 6, 0);
+  texInfoRow->setSpacing(8);
+
+  m_textureInfo = new QLabel(m_textureTab);
+  m_textureInfo->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+  m_textureInfo->setText("");
+  m_textureInfo->setVisible(false);
+  m_textureInfo->setWordWrap(true);
+
+  auto* mipLabel = new QLabel("Mip:", m_textureTab);
+  m_textureMipSelector = new QComboBox(m_textureTab);
+  m_textureMipSelector->setMinimumWidth(110);
+  m_textureMipSelector->setEnabled(false);
+  m_textureMipSelector->setVisible(false);
+
+  texInfoRow->addWidget(m_textureInfo, 1);
+  texInfoRow->addWidget(mipLabel, 0);
+  texInfoRow->addWidget(m_textureMipSelector, 0);
+
+  m_imageView = new QLabel(m_textureTab);
+  m_imageView->setAlignment(Qt::AlignCenter);
+  m_imageView->setMinimumSize(200, 200);
+
+  m_imageScroll = new QScrollArea(m_textureTab);
+  m_imageScroll->setWidgetResizable(false);
+  m_imageScroll->setAlignment(Qt::AlignCenter);
+  m_imageScroll->setFrameShape(QFrame::NoFrame);
+  m_imageScroll->setBackgroundRole(QPalette::Dark);
+  m_imageScroll->setWidget(m_imageView);
+
+  m_imageView->installEventFilter(this);
+  m_imageScroll->viewport()->installEventFilter(this);
+
+  auto* zoomInShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus), m_textureTab);
+  connect(zoomInShortcut, &QShortcut::activated, this, [this]() { stepTextureZoom(+1); });
+  auto* zoomInShortcutEq = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal), m_textureTab);
+  connect(zoomInShortcutEq, &QShortcut::activated, this, [this]() { stepTextureZoom(+1); });
+  auto* zoomOutShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus), m_textureTab);
+  connect(zoomOutShortcut, &QShortcut::activated, this, [this]() { stepTextureZoom(-1); });
+  auto* zoomResetShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_0), m_textureTab);
+  connect(zoomResetShortcut, &QShortcut::activated, this, [this]() { resetTextureZoomToFit(); });
+
+  if (m_textureMipSelector) {
+    connect(m_textureMipSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+      if (idx >= 0) renderCurrentTextureMip(idx);
+    });
+  }
+
+  texLayout->addLayout(texInfoRow, 0);
+  texLayout->addWidget(m_imageScroll, 1);
+
+  m_aptTab = new QWidget(m_viewerHost);
+  auto* aptLayout = new QVBoxLayout(m_aptTab);
+  aptLayout->setContentsMargins(0,0,0,0);
+  aptLayout->setSpacing(0);
+
+  // Toolbar
+  m_aptToolbar = new QToolBar(m_aptTab);
+  m_aptToolbar->setIconSize(QSize(16, 16));
+
+  // Frame navigation
+  m_aptPrevFrameAction = m_aptToolbar->addAction(QChar(0x25C4)); // ◄
+  m_aptPrevFrameAction->setToolTip("Previous root frame");
+  m_aptPrevFrameAction->setEnabled(false);
+  connect(m_aptPrevFrameAction, &QAction::triggered, this, [this]() {
+    if (m_aptCurrentFrameIndex > 0) setAptFrameIndex(m_aptCurrentFrameIndex - 1);
+  });
+
+  m_aptFrameSpin = new QSpinBox();
+  m_aptFrameSpin->setRange(0, 0);
+  m_aptFrameSpin->setValue(0);
+  m_aptFrameSpin->setMinimumWidth(52);
+  m_aptFrameSpin->setEnabled(false);
+  m_aptFrameSpin->setToolTip("Current root movie frame index (0-based)");
+  m_aptToolbar->addWidget(m_aptFrameSpin);
+  connect(m_aptFrameSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) {
+    if (!m_aptUpdatingUi) setAptFrameIndex(v);
+  });
+
+  m_aptFrameCountLabel = new QLabel(" / 0 ");
+  m_aptFrameCountLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+  m_aptToolbar->addWidget(m_aptFrameCountLabel);
+
+  m_aptNextFrameAction = m_aptToolbar->addAction(QChar(0x25BA)); // ►
+  m_aptNextFrameAction->setToolTip("Next root frame");
+  m_aptNextFrameAction->setEnabled(false);
+  connect(m_aptNextFrameAction, &QAction::triggered, this, [this]() {
+    if (m_currentAptFile &&
+        m_aptCurrentFrameIndex + 1 < static_cast<int>(m_currentAptFile->frames.size()))
+      setAptFrameIndex(m_aptCurrentFrameIndex + 1);
+  });
+
+  m_aptToolbar->addSeparator();
+
+  m_aptApplyAction = m_aptToolbar->addAction("Apply");
+  m_aptApplyAction->setEnabled(false);
+  m_aptApplyAction->setToolTip("Commit edits to the in-memory APT model");
+  connect(m_aptApplyAction, &QAction::triggered, this, &MainWindow::onAptApply);
+
+  m_aptSaveAction = m_aptToolbar->addAction("Save APT");
+  m_aptSaveAction->setEnabled(false);
+  m_aptSaveAction->setToolTip("Write patched APT bytes back to the source (standalone file or AST container entry)");
+  connect(m_aptSaveAction, &QAction::triggered, this, &MainWindow::onAptSave);
+
+  m_aptExportAction = m_aptToolbar->addAction("Export APT...");
+  m_aptExportAction->setEnabled(false);
+  m_aptExportAction->setToolTip("Save the current APT binary (with edits applied) to any file");
+  connect(m_aptExportAction, &QAction::triggered, this, &MainWindow::onAptExport);
+
+  m_aptToolbar->addSeparator();
+
+  m_aptDebugAction = m_aptToolbar->addAction("Debug Overlay");
+  m_aptDebugAction->setCheckable(true);
+  m_aptDebugAction->setChecked(false);
+  m_aptDebugAction->setToolTip("Show placement origins, bounding boxes, and character IDs for all nested sprites");
+  connect(m_aptDebugAction, &QAction::toggled, this, [this](bool) { refreshAptPreview(); });
+  aptLayout->addWidget(m_aptToolbar, 0);
+
+  auto* aptSplit = new QSplitter(Qt::Horizontal, m_aptTab);
+
+  m_aptTree = new QTreeWidget(aptSplit);
+  m_aptTree->setHeaderLabels(QStringList() << "APT Structure" << "Value");
+  m_aptTree->setUniformRowHeights(true);
+  m_aptTree->setRootIsDecorated(true);
+  m_aptTree->setAlternatingRowColors(false);
+  if (m_aptTree->header()) {
+    m_aptTree->header()->setStretchLastSection(false);
+    m_aptTree->setColumnWidth(0, 260);
+    m_aptTree->setColumnWidth(1, 140);
+  }
+
+  // Right panel: preview + stacked property editor
+  m_aptRightPane = new QWidget(aptSplit);
+  auto* aptRightLayout = new QVBoxLayout(m_aptRightPane);
+  aptRightLayout->setContentsMargins(0, 0, 0, 0);
+  aptRightLayout->setSpacing(6);
+
+  m_aptPreviewScene = new QGraphicsScene(m_aptRightPane);
+  m_aptPreviewView = new AptPreviewView(m_aptRightPane);
+  m_aptPreviewView->setScene(m_aptPreviewScene);
+  m_aptPreviewView->setRenderHint(QPainter::Antialiasing, true);
+  m_aptPreviewView->setDragMode(QGraphicsView::NoDrag);
+  m_aptPreviewView->setAlignment(Qt::AlignCenter);
+  m_aptPreviewView->setMinimumHeight(260);
+  m_aptPreviewView->setFrameShape(QFrame::StyledPanel);
+  m_aptPreviewView->setBackgroundBrush(QBrush(QColor(24, 24, 28)));
+  aptRightLayout->addWidget(m_aptPreviewView, 3);
+
+  m_aptPropStack = new QStackedWidget(m_aptRightPane);
+  aptRightLayout->addWidget(m_aptPropStack, 2);
+
+  // Page 0 — plain text fallback
+  m_aptDetails = new QPlainTextEdit(m_aptPropStack);
+  m_aptDetails->setReadOnly(true);
+  m_aptDetails->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  m_aptDetails->setFont(mono);
+  m_aptDetails->setPlaceholderText("Select an APT item to view details.");
+  m_aptPropStack->addWidget(m_aptDetails); // index 0
+
+  // Helper: create a scroll-wrapped QFormLayout page and add it to the stack.
+  auto makePage = [&]() -> std::pair<QWidget*, QFormLayout*> {
+    auto* scroll = new QScrollArea(m_aptPropStack);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto* inner = new QWidget();
+    auto* form  = new QFormLayout(inner);
+    form->setContentsMargins(8, 8, 8, 8);
+    form->setSpacing(6);
+    form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    scroll->setWidget(inner);
+    m_aptPropStack->addWidget(scroll);
+    return {scroll, form};
+  };
+
+  auto makeReadLabel = [](QWidget* parent) -> QLabel* {
+    auto* l = new QLabel(parent);
+    l->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    l->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    return l;
+  };
+
+  // Page 1 — Summary
+  {
+    auto [page, form] = makePage();
+    m_aptSummaryPage        = page;
+    m_aptSumWidthSpin       = new QSpinBox();
+    m_aptSumHeightSpin      = new QSpinBox();
+    m_aptSumWidthSpin->setRange(0, 65535);
+    m_aptSumHeightSpin->setRange(0, 65535);
+    m_aptSumFrameCountLabel  = makeReadLabel(page);
+    m_aptSumCharCountLabel   = makeReadLabel(page);
+    m_aptSumImportCountLabel = makeReadLabel(page);
+    m_aptSumExportCountLabel = makeReadLabel(page);
+    m_aptSumOffsetLabel      = makeReadLabel(page);
+    form->addRow("Screen Width",  m_aptSumWidthSpin);
+    form->addRow("Screen Height", m_aptSumHeightSpin);
+    form->addRow("Frames",        m_aptSumFrameCountLabel);
+    form->addRow("Characters",    m_aptSumCharCountLabel);
+    form->addRow("Imports",       m_aptSumImportCountLabel);
+    form->addRow("Exports",       m_aptSumExportCountLabel);
+    form->addRow("Movie Offset",  m_aptSumOffsetLabel);
+  }
+
+  // Page 2 — Import editor
+  {
+    auto [page, form]     = makePage();
+    m_aptImportPage       = page;
+    m_aptImportMovieEdit  = new QLineEdit();
+    m_aptImportNameEdit   = new QLineEdit();
+    m_aptImportCharLabel  = makeReadLabel(page);
+    m_aptImportOffsetLabel = makeReadLabel(page);
+    form->addRow("Movie File",   m_aptImportMovieEdit);
+    form->addRow("Symbol Name",  m_aptImportNameEdit);
+    form->addRow("Character ID", m_aptImportCharLabel);
+    form->addRow("Offset",       m_aptImportOffsetLabel);
+  }
+
+  // Page 3 — Export editor
+  {
+    auto [page, form]      = makePage();
+    m_aptExportPage        = page;
+    m_aptExportNameEdit    = new QLineEdit();
+    m_aptExportCharLabel   = makeReadLabel(page);
+    m_aptExportOffsetLabel = makeReadLabel(page);
+    form->addRow("Symbol Name",  m_aptExportNameEdit);
+    form->addRow("Character ID", m_aptExportCharLabel);
+    form->addRow("Offset",       m_aptExportOffsetLabel);
+  }
+
+  // Page 4 — Character info (read-only)
+  {
+    auto [page, form]    = makePage();
+    m_aptCharPage        = page;
+    m_aptCharTypeLabel   = makeReadLabel(page);
+    m_aptCharSigLabel    = makeReadLabel(page);
+    m_aptCharOffsetLabel = makeReadLabel(page);
+    form->addRow("Type",      m_aptCharTypeLabel);
+    form->addRow("Signature", m_aptCharSigLabel);
+    form->addRow("Offset",    m_aptCharOffsetLabel);
+  }
+
+  // Page 5 — Frame info (read-only)
+  {
+    auto [page, form]          = makePage();
+    m_aptFramePage             = page;
+    m_aptFrameItemCountLabel   = makeReadLabel(page);
+    m_aptFrameItemsOffsetLabel = makeReadLabel(page);
+    form->addRow("Item Count",    m_aptFrameItemCountLabel);
+    form->addRow("Items Offset",  m_aptFrameItemsOffsetLabel);
+  }
+
+  // Page 6 — Placement editor
+  {
+    auto [page, form]           = makePage();
+    m_aptPlacementPage          = page;
+    m_aptPlacementDepthSpin     = new QSpinBox();
+    m_aptPlacementCharSpin      = new QSpinBox();
+    m_aptPlacementNameEdit      = new QLineEdit();
+    m_aptPlacementXSpin         = new QDoubleSpinBox();
+    m_aptPlacementYSpin         = new QDoubleSpinBox();
+    m_aptPlacementScaleXSpin    = new QDoubleSpinBox();
+    m_aptPlacementScaleYSpin    = new QDoubleSpinBox();
+    m_aptPlacementRotSkew0Spin  = new QDoubleSpinBox();
+    m_aptPlacementRotSkew1Spin  = new QDoubleSpinBox();
+    m_aptPlacementOffsetLabel   = makeReadLabel(page);
+
+    m_aptPlacementDepthSpin->setRange(-32768, 32767);
+    m_aptPlacementCharSpin->setRange(0, 65535);
+
+    for (QDoubleSpinBox* spin : {m_aptPlacementXSpin, m_aptPlacementYSpin,
+                                  m_aptPlacementScaleXSpin, m_aptPlacementScaleYSpin,
+                                  m_aptPlacementRotSkew0Spin, m_aptPlacementRotSkew1Spin}) {
+      spin->setRange(-100000.0, 100000.0);
+      spin->setDecimals(6);
+      spin->setSingleStep(0.01);
+    }
+    m_aptPlacementXSpin->setDecimals(3); m_aptPlacementXSpin->setSingleStep(1.0);
+    m_aptPlacementYSpin->setDecimals(3); m_aptPlacementYSpin->setSingleStep(1.0);
+    m_aptPlacementScaleXSpin->setDecimals(4); m_aptPlacementScaleXSpin->setSingleStep(0.1);
+    m_aptPlacementScaleYSpin->setDecimals(4); m_aptPlacementScaleYSpin->setSingleStep(0.1);
+
+    form->addRow("Depth",           m_aptPlacementDepthSpin);
+    form->addRow("Character ID",    m_aptPlacementCharSpin);
+    form->addRow("Instance Name",   m_aptPlacementNameEdit);
+    form->addRow("X (tx)",          m_aptPlacementXSpin);
+    form->addRow("Y (ty)",          m_aptPlacementYSpin);
+    form->addRow("Scale X (a)",     m_aptPlacementScaleXSpin);
+    form->addRow("Rot/Skew b",      m_aptPlacementRotSkew0Spin);
+    form->addRow("Rot/Skew c",      m_aptPlacementRotSkew1Spin);
+    form->addRow("Scale Y (d)",     m_aptPlacementScaleYSpin);
+    form->addRow("Offset",          m_aptPlacementOffsetLabel);
+  }
+
+  auto markAptEditorDirty = [this]() {
+    if (m_aptUpdatingUi) return;
+    if (m_aptApplyAction) m_aptApplyAction->setEnabled(true);
+  };
+  connect(m_aptSumWidthSpin,  qOverload<int>(&QSpinBox::valueChanged), this, [markAptEditorDirty](int) { markAptEditorDirty(); });
+  connect(m_aptSumHeightSpin, qOverload<int>(&QSpinBox::valueChanged), this, [markAptEditorDirty](int) { markAptEditorDirty(); });
+  connect(m_aptImportMovieEdit, &QLineEdit::textEdited, this, [markAptEditorDirty](const QString&) { markAptEditorDirty(); });
+  connect(m_aptImportNameEdit,  &QLineEdit::textEdited, this, [markAptEditorDirty](const QString&) { markAptEditorDirty(); });
+  connect(m_aptExportNameEdit,  &QLineEdit::textEdited, this, [markAptEditorDirty](const QString&) { markAptEditorDirty(); });
+  connect(m_aptPlacementNameEdit, &QLineEdit::textEdited, this, [markAptEditorDirty](const QString&) { markAptEditorDirty(); });
+  connect(m_aptPlacementDepthSpin, qOverload<int>(&QSpinBox::valueChanged), this, [markAptEditorDirty](int) { markAptEditorDirty(); });
+  connect(m_aptPlacementCharSpin, qOverload<int>(&QSpinBox::valueChanged), this, [markAptEditorDirty](int) { markAptEditorDirty(); });
+  connect(m_aptPlacementXSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markAptEditorDirty](double) { markAptEditorDirty(); });
+  connect(m_aptPlacementYSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markAptEditorDirty](double) { markAptEditorDirty(); });
+  connect(m_aptPlacementScaleXSpin,   qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markAptEditorDirty](double) { markAptEditorDirty(); });
+  connect(m_aptPlacementScaleYSpin,   qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markAptEditorDirty](double) { markAptEditorDirty(); });
+  connect(m_aptPlacementRotSkew0Spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markAptEditorDirty](double) { markAptEditorDirty(); });
+  connect(m_aptPlacementRotSkew1Spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markAptEditorDirty](double) { markAptEditorDirty(); });
+
+  aptSplit->setStretchFactor(0, 3);
+  aptSplit->setStretchFactor(1, 4);
+
+  connect(m_aptTree, &QTreeWidget::currentItemChanged, this,
+          [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
+            syncAptPropEditorFromItem(current);
+            refreshAptPreview();
+          });
+
+  aptLayout->addWidget(aptSplit, 1);
+
+  m_rsfTab = new QWidget(m_viewerHost);
+  auto* rsfLayout = new QVBoxLayout(m_rsfTab);
+  rsfLayout->setContentsMargins(0,0,0,0);
+  rsfLayout->setSpacing(6);
+
+  m_rsfToolbar = new QToolBar(m_rsfTab);
+  m_rsfToolbar->setIconSize(QSize(16, 16));
+  m_rsfEditAction = m_rsfToolbar->addAction("Edit");
+  m_rsfEditAction->setCheckable(true);
+  m_rsfEditAction->setChecked(true);
+  m_rsfEditAction->setEnabled(false);
+  m_rsfEditAction->setVisible(false);
+  m_rsfApplyAction = m_rsfToolbar->addAction("Apply");
+  m_rsfApplyAction->setEnabled(false);
+  rsfLayout->addWidget(m_rsfToolbar, 0);
+
+  auto* rsfTop = new QWidget(m_rsfTab);
+  auto* rsfTopLayout = new QGridLayout(rsfTop);
+  rsfTopLayout->setContentsMargins(0,0,0,0);
+  rsfTopLayout->setHorizontalSpacing(8);
+  rsfTopLayout->setVerticalSpacing(4);
+
+  auto makeValueLabel = [rsfTop]() -> QLabel* {
+    auto* l = new QLabel(rsfTop);
+    l->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    l->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    return l;
+  };
+
+  rsfTopLayout->addWidget(new QLabel("Name", rsfTop), 0, 0);
+  m_rsfNameValue = makeValueLabel();
+  rsfTopLayout->addWidget(m_rsfNameValue, 0, 1, 1, 5);
+
+  rsfTopLayout->addWidget(new QLabel("Model Count", rsfTop), 1, 0);
+  m_rsfModelCountValue = makeValueLabel();
+  rsfTopLayout->addWidget(m_rsfModelCountValue, 1, 1);
+  rsfTopLayout->addWidget(new QLabel("Material Count", rsfTop), 1, 2);
+  m_rsfMaterialCountValue = makeValueLabel();
+  rsfTopLayout->addWidget(m_rsfMaterialCountValue, 1, 3);
+  rsfTopLayout->addWidget(new QLabel("Texture Count", rsfTop), 1, 4);
+  m_rsfTextureCountValue = makeValueLabel();
+  rsfTopLayout->addWidget(m_rsfTextureCountValue, 1, 5);
+
+  m_rsfMaterialsTable = new QTableWidget(m_rsfTab);
+  m_rsfMaterialsTable->setColumnCount(3);
+  m_rsfMaterialsTable->setHorizontalHeaderLabels(QStringList() << "#" << "Name" << "SubName");
+  m_rsfMaterialsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+  m_rsfMaterialsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+  m_rsfMaterialsTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed);
+  m_rsfMaterialsTable->verticalHeader()->setVisible(false);
+  m_rsfMaterialsTable->horizontalHeader()->setStretchLastSection(true);
+  m_rsfMaterialsTable->setMinimumHeight(220);
+
+  m_rsfParamsTable = new QTableWidget(m_rsfTab);
+  m_rsfParamsTable->setColumnCount(7);
+  m_rsfParamsTable->setHorizontalHeaderLabels(QStringList() << "#" << "VarType" << "Name" << "DATA0" << "DATA1" << "DATA2" << "DATA3");
+  m_rsfParamsTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed);
+  m_rsfParamsTable->verticalHeader()->setVisible(false);
+  m_rsfParamsTable->horizontalHeader()->setStretchLastSection(true);
+  m_rsfParamsTable->setMinimumHeight(180);
+
+
+  auto* rsfSplit = new QHBoxLayout();
+  rsfSplit->setContentsMargins(0,0,0,0);
+  rsfSplit->setSpacing(6);
+  rsfSplit->addWidget(m_rsfMaterialsTable, 1);
+  rsfSplit->addWidget(m_rsfParamsTable, 1);
+
+  rsfLayout->addWidget(rsfTop, 0);
+  rsfLayout->addLayout(rsfSplit, 1);
+
+  connect(m_rsfMaterialsTable, &QTableWidget::itemSelectionChanged, this, [this]() {
+    if (!m_rsfMaterialsTable) return;
+    const int row = m_rsfMaterialsTable->currentRow();
+    refreshRsfParamsTable(row);
+  });
+  connect(m_rsfMaterialsTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem*) {
+    if (m_rsfUpdatingUi || !m_rsfEditMode) return;
+    pullRsfUiIntoDocument();
+    setRsfDirty(true);
+  });
+  connect(m_rsfParamsTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem*) {
+    if (m_rsfUpdatingUi || !m_rsfEditMode) return;
+    pullRsfUiIntoDocument();
+    setRsfDirty(true);
+  });
+  connect(m_rsfEditAction, &QAction::toggled, this, [this](bool on) {
+    m_rsfEditMode = on;
+    if (m_rsfMaterialsTable) {
+      m_rsfMaterialsTable->setEditTriggers(on ? (QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed) : QAbstractItemView::NoEditTriggers);
+    }
+    if (m_rsfParamsTable) {
+      m_rsfParamsTable->setEditTriggers(on ? (QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed) : QAbstractItemView::NoEditTriggers);
+    }
+    if (m_rsfApplyAction) m_rsfApplyAction->setEnabled(on && m_rsfDirty && m_rsfCurrentDoc.has_value());
+  });
+  connect(m_rsfApplyAction, &QAction::triggered, this, [this]() {
+    applyRsfChanges();
+  });
+
+  m_viewTabs->addTab(m_hexView, "Hex");
+  m_viewTabs->addTab(textTab, "Text");
+  m_textTabIndex = m_viewTabs->indexOf(textTab);
+
+  m_viewTabs->addTab(m_textureTab, "Texture");
+  m_viewTabs->addTab(m_aptTab, "APT");
+  m_viewTabs->addTab(m_rsfTab, "RSF");
+
+  // Text tab helpers
+  connect(m_textWrapAction, &QAction::toggled, this, [this](bool on) {
+    if (!m_textView) return;
+    m_textView->setLineWrapMode(on ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+  });
+connect(m_textOpenExternalAction, &QAction::triggered, this, [this]() {
+  const QString startDir = !m_textExternalPath.isEmpty()
+                               ? QFileInfo(m_textExternalPath).absolutePath()
+                               : (!m_doc.path.isEmpty() ? QFileInfo(m_doc.path).absolutePath() : QDir::homePath());
+  const QString path = QFileDialog::getOpenFileName(
+      this,
+      "Open Text File",
+      startDir,
+      "Text/Config Files (*.txt *.xml *.cfg *.conf *.ini *.json *.yaml *.yml *.lua *.js *.css *.html *.htm);;All Files (*)");
+  if (path.isEmpty()) return;
+  (void)openExternalTextFile(path);
+});
+
+connect(m_textFindAction, &QAction::triggered, this, [this]() {
+  if (!m_textView) return;
+  bool ok = false;
+  const QString q = QInputDialog::getText(this, "Find", "Find:", QLineEdit::Normal, QString(), &ok);
+  if (!ok || q.isEmpty()) return;
+  m_lastFindQuery = q;
+  // start from current cursor
+  QTextCursor c = m_textView->textCursor();
+  c = m_textView->document()->find(q, c);
+  if (c.isNull()) {
+    // wrap
+    c = m_textView->document()->find(q);
+  }
+  if (c.isNull()) {
+    toastOk("No matches.");
+    return;
+  }
+  m_textView->setTextCursor(c);
+});
+
+connect(m_textFindNextAction, &QAction::triggered, this, [this]() {
+  if (!m_textView || m_lastFindQuery.isEmpty()) return;
+  QTextCursor c = m_textView->textCursor();
+  c = m_textView->document()->find(m_lastFindQuery, c);
+  if (c.isNull()) c = m_textView->document()->find(m_lastFindQuery);
+  if (c.isNull()) {
+    toastOk("No more matches.");
+    return;
+  }
+  m_textView->setTextCursor(c);
+});
+
+connect(m_textSaveShortcutAction, &QAction::triggered, this, [this]() {
+  if (!m_textApplyAction) return;
+  if (!m_textApplyAction->isEnabled()) return;
+  m_textApplyAction->trigger();
+});
+
+connect(m_textReplaceAction, &QAction::triggered, this, [this]() {
+  if (!m_textView) return;
+  bool ok = false;
+  const QString findQ = QInputDialog::getText(this, "Replace", "Find:", QLineEdit::Normal, m_lastFindQuery, &ok);
+  if (!ok || findQ.isEmpty()) return;
+  const QString repQ = QInputDialog::getText(this, "Replace", "Replace with:", QLineEdit::Normal, QString(), &ok);
+  if (!ok) return;
+
+  m_lastFindQuery = findQ;
+
+  const auto choice = QMessageBox::question(this, "Replace", "Replace all occurrences?",
+                                            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                                            QMessageBox::No);
+  if (choice == QMessageBox::Cancel) return;
+
+  if (choice == QMessageBox::Yes) {
+    // Replace all in the document.
+    const QString src = m_textView->toPlainText();
+    QString out = src;
+    out.replace(findQ, repQ);
+    if (out == src) { toastOk("No matches."); return; }
+
+    // Preserve cursor roughly at same position.
+    const int cursorPos = m_textView->textCursor().position();
+    m_textView->setPlainText(out);
+    QTextCursor c = m_textView->textCursor();
+    c.setPosition(std::min<qsizetype>(static_cast<qsizetype>(cursorPos), out.size()));
+    m_textView->setTextCursor(c);
+    return;
+  }
+
+  // Replace next occurrence from cursor.
+  QTextCursor c = m_textView->textCursor();
+  QTextCursor match = m_textView->document()->find(findQ, c);
+  if (match.isNull()) match = m_textView->document()->find(findQ);
+  if (match.isNull()) { toastOk("No matches."); return; }
+  match.insertText(repQ);
+  m_textView->setTextCursor(match);
+});
+
+connect(m_textGotoLineAction, &QAction::triggered, this, [this]() {
+  if (!m_textView) return;
+  const int maxLine = std::max(1, m_textView->document()->blockCount());
+  bool ok = false;
+  const int line = QInputDialog::getInt(this, "Go To Line", "Line number:", 1, 1, maxLine, 1, &ok);
+  if (!ok) return;
+  QTextBlock b = m_textView->document()->findBlockByNumber(line - 1);
+  if (!b.isValid()) return;
+  QTextCursor c(b);
+  m_textView->setTextCursor(c);
+  m_textView->centerCursor();
+});
+connect(m_textView->document(), &QTextDocument::modificationChanged, this, [this](bool modified) {
+const bool canEditNow = m_textAptXmlMode || (editingEnabled() && (m_textExternalMode || m_textForceEdit));
+if (m_textApplyAction) m_textApplyAction->setEnabled(modified && canEditNow);
+
+// Show a simple dirty indicator + star the Text tab.
+if (m_statusDirtyLabel) m_statusDirtyLabel->setText(modified ? "Dirty" : "");
+if (m_viewTabs && m_textTabIndex >= 0) {
+  m_viewTabs->setTabText(m_textTabIndex, modified ? "Text*" : "Text");
+}
+});
+
+connect(m_textReloadAction, &QAction::triggered, this, [this]() {
+  if (m_textExternalMode) {
+    if (!m_textExternalPath.isEmpty()) {
+      (void)openExternalTextFile(m_textExternalPath);
+    }
+    return;
+  }
+  if (m_tree) showViewerForItem(m_tree->currentItem());
+});
+  connect(m_textExportAction, &QAction::triggered, this, [this]() {
+  if (!m_textView) return;
+
+  QString suggested = "export.txt";
+  if (m_textExternalMode) {
+    if (!m_textExternalPath.isEmpty()) {
+      suggested = QFileInfo(m_textExternalPath).fileName();
+    } else if (!m_textExternalSuggestedName.isEmpty()) {
+      suggested = m_textExternalSuggestedName;
+    }
+  } else if (m_tree) {
+    auto* it = m_tree->currentItem();
+    if (it && !it->text(0).isEmpty()) suggested = it->text(0);
+  }
+
+  const QString path = QFileDialog::getSaveFileName(
+      this,
+      "Export Text",
+      suggested,
+      "Text/Config Files (*.txt *.xml *.cfg *.conf *.ini *.json *.yaml *.yml *.lua *.js *.css *.html *.htm);;All Files (*)");
+  if (path.isEmpty()) return;
+
+  QFile f(path);
+  if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    showErrorDialog("Export Text", "Failed to write file.", QString(), true);
+    return;
+  }
+  const QByteArray out = m_textView->toPlainText().toUtf8();
+  f.write(out);
+  f.close();
+
+  toastOk(QString("Exported %1").arg(QFileInfo(path).fileName()));
+});
+
+  
+  connect(m_textEditAction, &QAction::toggled, this, [this](bool on) {
+    m_textForceEdit = on;
+    if (on) {
+      if (m_textAptXmlMode) {
+        if (m_textView) { m_textView->setReadOnly(false); m_textView->setFocus(); }
+        if (m_tree) showViewerForItem(m_tree->currentItem());
+        return;
+      }
+      if (!editingEnabled()) {
+        // Can't edit if editing mode is off.
+        m_textForceEdit = false;
+        if (m_textEditAction) m_textEditAction->setChecked(false);
+        showInfoDialog("Editing Disabled", "Turn on Editing to modify this text.");
+        return;
+      }
+      // Only allow toggling for embedded text selections.
+      QTreeWidgetItem* item = m_tree ? m_tree->currentItem() : nullptr;
+      const bool isEmbedded = item ? item->data(0, Qt::UserRole + 3).toBool() : false;
+      if (!isEmbedded) {
+        m_textForceEdit = false;
+        if (m_textEditAction) m_textEditAction->setChecked(false);
+        showInfoDialog("Not Editable", "Select an embedded text entry to edit.");
+        return;
+      }
+      if (m_textView) {
+        m_textView->setReadOnly(false);
+        m_textView->setFocus();
+      }
+    } else {
+      if (m_textView) {
+        if (m_textAptXmlMode) {
+          m_textView->setReadOnly(true);
+        } else if (!m_textExternalMode) {
+          m_textView->setReadOnly(true);
+        }
+      }
+    }
+    // Refresh apply enable / dirty indicator
+    if (m_tree) showViewerForItem(m_tree->currentItem());
+  });
+
+connect(m_textApplyAction, &QAction::triggered, this, [this]() {
+if (!m_textView) return;
+
+if (m_textAptXmlMode) {
+  m_textAptXmlCached = m_textView->toPlainText();
+  m_textView->document()->setModified(false);
+  toastOk("APT XML updated (not written to disk)");
+  return;
+}
+
+// External text file mode: write back to disk with safe-write + backup.
+if (m_textExternalMode) {
+  const QString outPath = m_textExternalPath;
+  if (outPath.isEmpty()) {
+    const QString savePath = QFileDialog::getSaveFileName(
+        this,
+        "Save Text File",
+        QDir::homePath(),
+        "Text/Config Files (*.txt *.xml *.cfg *.conf *.ini *.json *.yaml *.yml *.lua *.js *.css *.html *.htm);;All Files (*)");
+    if (savePath.isEmpty()) return;
+    m_textExternalPath = savePath;
+  }
+
+  gf::core::SafeWriteOptions opt;
+  opt.make_backup = true;
+  opt.max_bytes = 128ull * 1024ull * 1024ull;
+
+  const std::string text = m_textView->toPlainText().toStdString();
+  const auto res = gf::core::safe_write_text(std::filesystem::path(m_textExternalPath.toStdString()),
+                                             text,
+                                             opt);
+  if (!res.ok) {
+    showErrorDialog("Save Text", "Save failed.", QString::fromStdString(res.message), true);
+    return;
+  }
+
+  m_textView->document()->setModified(false);
+  QString msg = QString("Saved %1").arg(QFileInfo(m_textExternalPath).fileName());
+  if (res.backup_path) {
+    msg += QString(" (backup: %1)").arg(QFileInfo(QString::fromStdString(res.backup_path->string())).fileName());
+  }
+  toastOk(msg);
+  return;
+}
+
+if (!m_tree) return;
+    auto* it = m_tree->currentItem();
+    if (!it) return;
+
+    const bool embedded = it->data(0, Qt::UserRole + 3).toBool();
+    if (!embedded) return;
+
+    const QString containerPath = it->data(0, Qt::UserRole).toString();
+    const qulonglong entryIndexQ = it->data(0, Qt::UserRole + 6).toULongLong();
+    const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
+    if (containerPath.isEmpty()) return;
+
+    const QByteArray newBytes = m_textView->toPlainText().toUtf8();
+    if (QMessageBox::question(this, "Apply Changes", "Replace the selected embedded entry with the edited text?\n\nA backup will be created.") != QMessageBox::Yes) {
+      return;
+    }
+
+    std::string err;
+
+    // Reuse the live in-memory editor if it covers the same container, so that
+    // any previously unsaved replacements are preserved.  Fall back to loading
+    // from disk only when no live editor exists for this path.
+    std::optional<gf::core::AstContainerEditor> edOpt;
+    if (m_liveAstEditor && m_liveAstPath == containerPath) {
+      edOpt = *m_liveAstEditor;
+    } else {
+      edOpt = gf::core::AstContainerEditor::load(
+          std::filesystem::path(containerPath.toStdString()), &err);
+      if (!edOpt.has_value()) {
+        showErrorDialog("Apply Changes",
+                        "Failed to load container.",
+                        QString::fromStdString(err),
+                        true);
+        return;
+      }
+    }
+
+    std::vector<std::uint8_t> v(newBytes.begin(), newBytes.end());
+    if (!edOpt->replaceEntryBytes(entryIndex, v,
+                                  gf::core::AstContainerEditor::ReplaceMode::PreserveZlibIfPresent,
+                                  &err)) {
+      showErrorDialog("Apply Changes",
+                      "Failed to apply changes.",
+                      QString::fromStdString(err),
+                      true);
+      return;
+    }
+
+    // Write to disk and update the live editor so subsequent saves see the change.
+    if (!edOpt->writeInPlace(&err, /*makeBackup=*/true)) {
+      showErrorDialog("Apply Changes",
+                      "Failed to write container.",
+                      QString::fromStdString(err),
+                      true);
+      return;
+    }
+
+    m_liveAstEditor = std::make_unique<gf::core::AstContainerEditor>(std::move(*edOpt));
+    m_liveAstPath = containerPath;
+    setDirty(true);
+
+    statusBar()->showMessage("Applied text changes (backup created)", 3000);
+    if (m_tree) showViewerForItem(it);
+  });
+
+  // Re-fit the texture preview when the user switches to the Texture tab.
+  connect(m_viewTabs, &QTabWidget::currentChanged, this, [this](int idx) {
+    if (idx != 2) return;
+    if (m_textureOriginal.isNull() || !m_imageView) return;
+    applyTextureZoom();
+  });
+
+  m_viewTabs->setVisible(false);
+
+  vlayout->addWidget(m_viewerLabel);
+  vlayout->addWidget(m_viewTabs, 1);
+  m_viewerHost->setLayout(vlayout);
+
+  setCentralWidget(m_viewerHost);
+
+  updateDocumentActions();
+}
+
+bool MainWindow::openExternalTextFile(const QString& path)
+{
+  if (!m_textView) return false;
+
+  // If switching away from embedded view, clear any previous selection context.
+  m_textExternalMode = true;
+  m_textExternalPath = QDir::toNativeSeparators(path);
+
+  if (m_viewTabs) {
+    m_viewTabs->setVisible(true);
+    // Text tab index is 1 (Hex=0, Text=1, Texture=2, RSF=3)
+    m_viewTabs->setCurrentIndex(1);
+  }
+
+  if (m_textExternalPath.isEmpty()) {
+    m_textView->setPlainText(QString());
+    m_textView->document()->setModified(false);
+    if (m_textView) m_textView->setReadOnly(!editingEnabled());
+    m_textExternalSuggestedName = "untitled.txt";
+    toastOk("Opened external text editor");
+    return true;
+  }
+
+  QFile f(m_textExternalPath);
+  if (!f.open(QIODevice::ReadOnly)) {
+    showErrorDialog("Open Text File", "Failed to open file.", m_textExternalPath, true);
+    return false;
+  }
+
+  static constexpr qint64 kMaxBytes = 32ll * 1024ll * 1024ll; // 32 MiB
+  if (f.size() > kMaxBytes) {
+    showErrorDialog("Open Text File", "File is too large for the text editor (32 MiB limit).", QString(), true);
+    return false;
+  }
+
+  const QByteArray bytes = f.readAll();
+  const QString text = QString::fromUtf8(bytes);
+  m_textView->setPlainText(text);
+  m_textView->document()->setModified(false);
+    if (m_textView) m_textView->setReadOnly(!editingEnabled());
+
+  m_textExternalSuggestedName = QFileInfo(m_textExternalPath).fileName();
+  if (m_statusDocLabel) {
+    m_statusDocLabel->setText(QString("Text: %1").arg(QFileInfo(m_textExternalPath).fileName()));
+    m_statusDocLabel->setToolTip(m_textExternalPath);
+  }
+
+  toastOk(QString("Opened %1").arg(QFileInfo(m_textExternalPath).fileName()));
+  return true;
+}
+
+void MainWindow::onOpenFile() {
+  const QString startDir = m_doc.path.isEmpty() ? QDir::homePath() : QFileInfo(m_doc.path).absolutePath();
+  const QString path = QFileDialog::getOpenFileName(this,
+                                                    "Open Archive",
+                                                    startDir,
+                                                    "EA Archives (*.ast *.bgfa);;All Files (*.*)");
+  if (path.isEmpty()) return;
+  openStandaloneAst(path);
+}
+
+void MainWindow::onOpenApt() {
+  const QString aptPath = QFileDialog::getOpenFileName(
+      this,
+      "Open APT",
+      QString(),
+      "APT files (*.apt);;All files (*.*)");
+  if (aptPath.isEmpty()) return;
+  openStandaloneApt(aptPath);
+}
+
+void MainWindow::openStandaloneApt(const QString& aptPath) {
+  setMode(Mode::Standalone);
+  m_cacheId = cacheIdFromSeed(aptPath);
+  m_nameCache.loadForGame(m_cacheId);
+
+  // This is not an AST, but we reuse DocumentLifecycle for basic window title + dirty.
+  m_doc.path = aptPath;
+  setDirty(false);
+  ++m_treeToken;
+  m_tree->clear();
+
+  const QFileInfo fi(aptPath);
+  const QString constPath = fi.dir().absoluteFilePath(fi.completeBaseName() + ".const");
+
+  std::string err;
+  const auto fileOpt = gf::apt::read_apt_file(aptPath.toStdString(), constPath.toStdString(), &err);
+  if (!fileOpt) {
+    showErrorDialog("Open APT Failed",
+                    "Could not open this APT.\n\nAPT files require a matching .const next to them.",
+                    QString::fromStdString(err));
+    return;
+  }
+  const auto& file = *fileOpt;
+  const gf::apt::AptSummary& sum = file.summary;
+
+  auto* root = new QTreeWidgetItem(m_tree, QStringList()
+                                            << ("APT: " + fi.fileName())
+                                            << "APT"
+                                            << "");
+  root->setToolTip(0, aptPath + "\n" + constPath);
+  root->setData(0, Qt::UserRole, aptPath);
+  root->setData(0, Qt::UserRole + 1, qulonglong(0));
+  root->setData(0, Qt::UserRole + 2, qulonglong(QFileInfo(aptPath).size()));
+  root->setData(0, Qt::UserRole + 3, false);
+
+  // Summary node
+  {
+    auto* meta = new QTreeWidgetItem(root, QStringList()
+                                              << "Summary"
+                                              << "APT"
+                                              << QString("%1 bytes").arg(QFileInfo(aptPath).size()));
+    meta->setData(0, Qt::UserRole, aptPath);
+    meta->setData(0, Qt::UserRole + 1, qulonglong(sum.aptdataoffset));
+    meta->setData(0, Qt::UserRole + 2, qulonglong(64));
+    meta->setData(0, Qt::UserRole + 3, false);
+    meta->setToolTip(0,
+                     QString("Screen: %1x%2\nFrames: %3\nCharacters: %4\nImports: %5\nExports: %6\nMovie offset: 0x%7")
+                         .arg(sum.screensizex)
+                         .arg(sum.screensizey)
+                         .arg(sum.framecount)
+                         .arg(sum.charactercount)
+                         .arg(sum.importcount)
+                         .arg(sum.exportcount)
+                         .arg(QString::number(sum.aptdataoffset, 16)));
+  }
+
+  // Key slices (hex preview friendly)
+  auto* tables = new QTreeWidgetItem(root, QStringList() << "Tables" << "APT" << "");
+  for (const auto& s : file.slices) {
+    auto* it = new QTreeWidgetItem(tables, QStringList()
+                                             << QString::fromStdString(s.name)
+                                             << "APT"
+                                             << QString::number(qulonglong(s.size)));
+    it->setData(0, Qt::UserRole, aptPath);
+    it->setData(0, Qt::UserRole + 1, qulonglong(s.offset));
+    it->setData(0, Qt::UserRole + 2, qulonglong(s.size));
+    it->setData(0, Qt::UserRole + 3, false);
+    it->setToolTip(0, QString("Offset: 0x%1\nSize: %2")
+                           .arg(QString::number(qulonglong(s.offset), 16))
+                           .arg(QString::number(qulonglong(s.size))));
+  }
+
+  m_tree->expandItem(root);
+  m_tree->expandItem(tables);
+
+  // Parsed APT tables (best-effort)
+  {
+    auto* importsNode = new QTreeWidgetItem(root, QStringList() << QString("Imports (%1)").arg(file.imports.size()) << "APT" << "");
+    for (std::size_t i = 0; i < file.imports.size(); ++i) {
+      const auto& im = file.imports[i];
+      const QString label = QString("%1: %2 :: %3")
+                                .arg(qulonglong(i))
+                                .arg(QString::fromStdString(im.movie))
+                                .arg(QString::fromStdString(im.name));
+      auto* it = new QTreeWidgetItem(importsNode, QStringList() << label << "Import" << "16");
+      it->setData(0, Qt::UserRole, aptPath);
+      it->setData(0, Qt::UserRole + 1, qulonglong(im.offset));
+      it->setData(0, Qt::UserRole + 2, qulonglong(16));
+      it->setData(0, Qt::UserRole + 3, false);
+      it->setToolTip(0, QString("Character: %1\nOffset: 0x%2")
+                             .arg(im.character)
+                             .arg(QString::number(qulonglong(im.offset), 16)));
+    }
+
+    auto* exportsNode = new QTreeWidgetItem(root, QStringList() << QString("Exports (%1)").arg(file.exports.size()) << "APT" << "");
+    for (std::size_t i = 0; i < file.exports.size(); ++i) {
+      const auto& ex = file.exports[i];
+      const QString label = QString("%1: %2")
+                                .arg(qulonglong(i))
+                                .arg(QString::fromStdString(ex.name));
+      auto* it = new QTreeWidgetItem(exportsNode, QStringList() << label << "Export" << "8");
+      it->setData(0, Qt::UserRole, aptPath);
+      it->setData(0, Qt::UserRole + 1, qulonglong(ex.offset));
+      it->setData(0, Qt::UserRole + 2, qulonglong(8));
+      it->setData(0, Qt::UserRole + 3, false);
+      it->setToolTip(0, QString("Character: %1\nOffset: 0x%2")
+                             .arg(ex.character)
+                             .arg(QString::number(qulonglong(ex.offset), 16)));
+    }
+
+    auto* framesNode = new QTreeWidgetItem(root, QStringList() << QString("Frames (%1)").arg(file.frames.size()) << "APT" << "");
+    for (std::size_t i = 0; i < file.frames.size(); ++i) {
+      const auto& fr = file.frames[i];
+      const QString label = QString("Frame %1 (%2 items)").arg(qulonglong(i)).arg(fr.frameitemcount);
+      auto* it = new QTreeWidgetItem(framesNode, QStringList() << label << "Frame" << "8");
+      it->setData(0, Qt::UserRole, aptPath);
+      it->setData(0, Qt::UserRole + 1, qulonglong(fr.offset));
+      it->setData(0, Qt::UserRole + 2, qulonglong(8));
+      it->setData(0, Qt::UserRole + 3, false);
+      it->setToolTip(0, QString("Items ptr: 0x%1\nOffset: 0x%2")
+                             .arg(QString::number(qulonglong(fr.items_offset), 16))
+                             .arg(QString::number(qulonglong(fr.offset), 16)));
+    }
+
+    // Count local (non-null) characters for the header label.
+    const std::size_t localCharCount = std::count_if(
+        file.characters.begin(), file.characters.end(),
+        [](const gf::apt::AptCharacter& c){ return c.type != 0; });
+    auto* charsNode = new QTreeWidgetItem(root,
+        QStringList() << QString("Characters (%1)").arg(localCharCount) << "APT" << "");
+    for (std::size_t i = 0; i < file.characters.size(); ++i) {
+      const auto& ch = file.characters[i];
+      // Type-0 entries are import-placeholder slots; show them but mark clearly.
+      const QString typeName = (ch.type == 0)
+          ? QString("import slot")
+          : QString::fromStdString(gf::apt::aptCharTypeName(ch.type));
+      const QString label = QString("Character %1 — %2").arg(qulonglong(i)).arg(typeName);
+      auto* it = new QTreeWidgetItem(charsNode, QStringList() << label << "Character" << "8");
+      it->setData(0, Qt::UserRole, aptPath);
+      it->setData(0, Qt::UserRole + 1, qulonglong(ch.offset));
+      it->setData(0, Qt::UserRole + 2, qulonglong(8));
+      it->setData(0, Qt::UserRole + 3, false);
+      it->setToolTip(0, QString("ID: %1\nType: %2 (%3)\nSignature: 0x%4\nOffset: 0x%5")
+                             .arg(qulonglong(i))
+                             .arg(ch.type)
+                             .arg(typeName)
+                             .arg(QString::number(qulonglong(ch.signature), 16))
+                             .arg(QString::number(qulonglong(ch.offset), 16)));
+    }
+  }
+
+  // Status bar context
+  m_statusContainerPath = aptPath;
+  m_statusEntryName = "(none)";
+  m_statusEntryType = "APT";
+  m_statusEntrySize = 0;
+  m_statusEntryFlags = 0;
+  updateStatusBar();
+
+  updateStatusSelection(root);
+  showViewerForItem(root);
+  updateDocumentActions();
+}
+
+void MainWindow::onSaveAs() {
+  const QString srcPath = m_liveAstEditor ? m_liveAstPath : m_doc.path;
+  if (srcPath.isEmpty()) {
+    showInfoDialog("Save As", "No document open.");
+    return;
+  }
+
+  QFileInfo fi(srcPath);
+  const QString base = fi.completeBaseName().isEmpty() ? fi.fileName() : fi.completeBaseName();
+  const QString ext = fi.suffix().isEmpty() ? QString("ast") : fi.suffix();
+  const QString suggested = fi.absoluteDir().absoluteFilePath(base + "_saveas." + ext);
+  const QString outPath = QFileDialog::getSaveFileName(this,
+                                                       "Save As",
+                                                       suggested,
+                                                       "EA Archives (*.ast *.bgfa);;All Files (*.*)");
+  if (outPath.isEmpty()) return;
+
+  // Use in-memory editor bytes (includes all pending replacements) if available;
+  // otherwise fall back to a plain copy of the on-disk file.
+  std::vector<std::uint8_t> bytes;
+  if (m_liveAstEditor) {
+    std::string err;
+    bytes = m_liveAstEditor->rebuild(&err);
+    if (bytes.empty() && !err.empty()) {
+      showErrorDialog("Save As", "Failed to rebuild AST.", QString::fromStdString(err), true);
+      return;
+    }
+  } else {
+    QFile in(srcPath);
+    if (!in.open(QIODevice::ReadOnly)) {
+      showErrorDialog("Save As", "Failed to open source file.", QString(), false);
+      return;
+    }
+    const QByteArray raw = in.readAll();
+    bytes.assign(reinterpret_cast<const std::uint8_t*>(raw.constData()),
+                 reinterpret_cast<const std::uint8_t*>(raw.constData()) + raw.size());
+  }
+
+  gf::core::SafeWriteOptions opt;
+  opt.make_backup = true;
+  const auto* bptr = reinterpret_cast<const std::byte*>(bytes.data());
+  const auto r = gf::core::safe_write_bytes(outPath.toStdString(),
+                                            std::span<const std::byte>(bptr, bytes.size()),
+                                            opt);
+  if (!r.ok) {
+    showErrorDialog("Save As", "Write failed.", QString::fromStdString(r.message), false);
+    return;
+  }
+
+  toastOk(QString("Saved As %1").arg(QFileInfo(outPath).fileName()));
+  statusBar()->showMessage(QString("Saved As → %1").arg(QDir::toNativeSeparators(outPath)), 4000);
+}
+
+
+
+void MainWindow::onSave() {
+  if (!m_doc.dirty) return;
+
+  if (m_liveAstEditor && !m_liveAstPath.isEmpty()) {
+    std::string err;
+    if (!m_liveAstEditor->writeInPlace(&err, true)) {
+      showErrorDialog("Save", "Failed to write AST container.", QString::fromStdString(err), true);
+      return;
+    }
+  }
+
+  const bool ok = m_nameCache.save();
+  if (!ok) {
+    showErrorDialog("Save", "Failed to save name cache.", QString(), true);
+    return;
+  }
+  setDirty(false);
+  QString msg = "Saved.";
+  const QString backup = m_nameCache.lastBackupPath();
+  if (!backup.isEmpty()) {
+    msg += QString(" Backup: %1").arg(QFileInfo(backup).fileName());
+  }
+  if (m_liveAstEditor && !m_liveAstPath.isEmpty()) {
+    msg += QString(" AST backup created next to %1.").arg(QFileInfo(m_liveAstPath).fileName());
+  }
+  statusBar()->showMessage(msg, 3500);
+}
+
+void MainWindow::onRevert() {
+  if (!DocumentLifecycle::maybePromptDiscard(this, m_doc.dirty)) return;
+
+  m_liveAstEditor.reset();
+  m_liveAstPath.clear();
+  m_lastReplaceUndo = LastReplaceUndo{};
+  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(false);
+
+  // Reload name cache from disk.
+  if (!m_cacheId.isEmpty()) {
+    m_nameCache.loadForGame(m_cacheId);
+  }
+
+  // Rebuild UI based on current mode.
+  if (m_mode == Mode::Standalone) {
+    const QString p = m_doc.path;
+    if (!p.isEmpty()) openStandaloneAst(p);
+    else setDirty(false);
+  } else {
+    if (!m_lastGameRootPath.isEmpty()) {
+      openGame(m_lastGameDisplayName,
+               m_lastGameRootPath,
+               m_lastGameBaseContentDir,
+               m_lastGameUpdateContentDir);
+    } else {
+      setDirty(false);
+    }
+  }
+
+  statusBar()->showMessage("Reverted.", 2500);
+}
+
+void MainWindow::exportCopyOf(const QString& sourcePath) {
+  QFileInfo fi(sourcePath);
+  const QString base = fi.completeBaseName().isEmpty() ? fi.fileName() : fi.completeBaseName();
+  QString ext = normalizeExt(fi.suffix());
+  if (ext.isEmpty()) ext = "bin";
+
+  const QString suggested = fi.absoluteDir().absoluteFilePath(base + "_copy." + ext);
+  QString outPath = QFileDialog::getSaveFileName(this,
+                                                 "Export Copy",
+                                                 suggested,
+                                                 saveFilterForExt(ext));
+  if (outPath.isEmpty()) return;
+  outPath = ensureHasExtension(outPath, ext);
+
+  QFile in(sourcePath);
+  if (!in.open(QIODevice::ReadOnly)) {
+    showErrorDialog("Export Failed", "Failed to open source file for reading.", QString(), false);
+    return;
+  }
+
+  constexpr qint64 kMaxExport = 1024ll * 1024ll * 1024ll; // 1 GiB safety cap
+  if (in.size() > kMaxExport) {
+    showErrorDialog("Export Failed", "Refusing to export: file is larger than the safety cap (1 GiB).", "If you need this, we can implement streaming export next.", false);
+    return;
+  }
+
+  const QByteArray bytes = in.readAll();
+  in.close();
+
+  const auto* bptr = reinterpret_cast<const std::byte*>(bytes.constData());
+  gf::core::SafeWriteOptions opt;
+  opt.make_backup = true; // If user overwrites an existing file, preserve it.
+  const auto r = gf::core::safe_write_bytes(outPath.toStdString(),
+                                            std::span<const std::byte>(bptr, static_cast<std::size_t>(bytes.size())),
+                                            opt);
+  if (!r.ok) {
+    showErrorDialog("Export Failed", "Export failed.", QString::fromStdString(r.message), false);
+    return;
+  }
+
+  QString msg = "Exported successfully.";
+  if (r.backup_path) {
+    msg += QString("\nBackup created: %1").arg(QString::fromStdString(r.backup_path->string()));
+  }
+  toastOk(QString("Exported %1").arg(QFileInfo(outPath).fileName()));
+  showInfoDialog("Export", msg);
+}
+
+
+
+void MainWindow::onUndoLastReplace() {
+  if (!m_lastReplaceUndo.valid) {
+    showInfoDialog("Undo Last Replace", "There is no in-memory replacement to undo.");
+    return;
+  }
+
+  std::string err;
+  std::optional<gf::core::AstContainerEditor> loaded;
+  if (m_liveAstEditor && m_liveAstPath == m_lastReplaceUndo.containerPath) {
+    loaded = *m_liveAstEditor;
+  } else {
+    loaded = gf::core::AstContainerEditor::load(m_lastReplaceUndo.containerPath.toStdString(), &err);
+    if (!loaded.has_value()) {
+      showErrorDialog("Undo Last Replace Failed",
+                      "The AST container could not be loaded.",
+                      QString::fromStdString(err),
+                      false);
+      return;
+    }
+  }
+
+  const auto prev = std::span<const std::uint8_t>(
+      reinterpret_cast<const std::uint8_t*>(m_lastReplaceUndo.previousStoredBytes.constData()),
+      static_cast<std::size_t>(m_lastReplaceUndo.previousStoredBytes.size()));
+  if (!loaded->replaceEntryBytes(m_lastReplaceUndo.entryIndex,
+                                 prev,
+                                 gf::core::AstContainerEditor::ReplaceMode::Raw,
+                                 &err)) {
+    showErrorDialog("Undo Last Replace Failed",
+                    "The previous entry bytes could not be restored.",
+                    QString::fromStdString(err),
+                    true);
+    return;
+  }
+
+  m_liveAstEditor = std::make_unique<gf::core::AstContainerEditor>(std::move(*loaded));
+  m_liveAstPath = m_lastReplaceUndo.containerPath;
+  setDirty(true);
+
+  if (!m_lastReplaceUndo.itemCacheKey.isEmpty()) {
+    if (auto* it = findTreeItemByCacheKey(m_tree, m_lastReplaceUndo.itemCacheKey)) {
+      it->setData(0, Qt::UserRole + 30, m_lastReplaceUndo.previousStoredBytes);
+      if (!m_lastReplaceUndo.previousPreviewBytes.isEmpty()) {
+        it->setData(0, Qt::UserRole + 31, m_lastReplaceUndo.previousPreviewBytes);
+      } else {
+        it->setData(0, Qt::UserRole + 31, QVariant());
+      }
+      showViewerForItem(it);
+    }
+  }
+
+  const QString label = m_lastReplaceUndo.displayName.isEmpty() ? "entry" : m_lastReplaceUndo.displayName;
+  m_lastReplaceUndo = LastReplaceUndo{};
+  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(false);
+  statusBar()->showMessage(QString("Undid last in-memory replace for %1.").arg(label), 4000);
+}
+
+void MainWindow::refreshCurrentArchiveView() {
+  const QString currentKey = m_tree && m_tree->currentItem() ? makeTreeCacheKey(m_tree->currentItem()) : QString();
+  if (m_mode == Mode::Standalone) {
+    const QString p = m_doc.path;
+    if (!p.isEmpty()) openStandaloneAst(p);
+  } else if (!m_lastGameRootPath.isEmpty()) {
+    openGame(m_lastGameDisplayName,
+             m_lastGameRootPath,
+             m_lastGameBaseContentDir,
+             m_lastGameUpdateContentDir);
+  }
+  if (!currentKey.isEmpty()) {
+    if (auto* it = findTreeItemByCacheKey(m_tree, currentKey)) {
+      m_tree->setCurrentItem(it);
+    }
+  }
+  statusBar()->showMessage("Archive view refreshed.", 2500);
+}
+
+void MainWindow::onRestoreLatestBackup() {
+  if (!editingEnabled()) {
+    showInfoDialog("Restore Backup", "Editing is currently OFF.\n\nEnable Tools > Enable Editing (unsafe) to allow restore operations.");
+    return;
+  }
+  if (m_doc.path.isEmpty()) return;
+
+  const QString targetPath = m_doc.path;
+  const QFileInfo fi(targetPath);
+  const QDir dir = fi.absoluteDir();
+  const QString baseName = fi.fileName();
+
+  // Find backups created by safe_write_bytes: <filename>.bak_YYYYMMDD_HHMMSS
+  const QString pattern = baseName + ".bak_*";
+  const QFileInfoList backups = dir.entryInfoList(QStringList() << pattern, QDir::Files, QDir::Time);
+
+  if (backups.isEmpty()) {
+    showInfoDialog("Restore Backup", "No backups were found next to this file.");
+    return;
+  }
+
+  const QFileInfo newest = backups.first();
+  const auto ans = QMessageBox::question(
+      this,
+      "Restore Backup",
+      QStringLiteral("Restore the latest backup?\n\nTarget:\n%1\n\nBackup:\n%2\n\nThis will overwrite the target (and will create a new backup of the current file).")
+          .arg(QDir::toNativeSeparators(targetPath))
+          .arg(QDir::toNativeSeparators(newest.absoluteFilePath())),
+      QMessageBox::Yes | QMessageBox::No,
+      QMessageBox::No);
+  if (ans != QMessageBox::Yes) return;
+
+  QFile b(newest.absoluteFilePath());
+  if (!b.open(QIODevice::ReadOnly)) {
+    showErrorDialog("Restore Backup Failed", "Failed to open the backup for reading.", QString(), false);
+    return;
+  }
+  const QByteArray bytes = b.readAll();
+  b.close();
+
+  const auto* bptr = reinterpret_cast<const std::byte*>(bytes.constData());
+  gf::core::SafeWriteOptions opt;
+  opt.make_backup = true;
+  const auto r = gf::core::safe_write_bytes(targetPath.toStdString(),
+                                            std::span<const std::byte>(bptr, static_cast<std::size_t>(bytes.size())),
+                                            opt);
+  if (!r.ok) {
+    showErrorDialog("Restore Backup Failed", "Restore failed.", QString::fromStdString(r.message), false);
+    return;
+  }
+
+  statusBar()->showMessage("Restored latest backup (current file was backed up).", 4000);
+  // Reload UI
+  openStandaloneAst(targetPath);
+}
+
+
+void MainWindow::updateDocumentActions() {
+  const bool hasDoc = !m_doc.path.isEmpty();
+
+  auto hasBackupNextToDoc = [&]() -> bool {
+    if (!hasDoc) return false;
+    const QFileInfo fi(m_doc.path);
+    const QDir dir = fi.absoluteDir();
+    const QString baseName = fi.fileName();
+    const QString pattern = baseName + ".bak_*";
+    const QFileInfoList backups = dir.entryInfoList(QStringList() << pattern, QDir::Files, QDir::Time);
+    return !backups.isEmpty();
+  };
+
+  if (m_actOpen) m_actOpen->setEnabled(true);
+  if (m_actRestoreBackup) m_actRestoreBackup->setEnabled(hasDoc && editingEnabled() && hasBackupNextToDoc());
+  if (m_actSaveAs) m_actSaveAs->setEnabled(hasDoc);
+  if (m_actSave) m_actSave->setEnabled(hasDoc && m_doc.dirty);
+  if (m_actRevert) m_actRevert->setEnabled(hasDoc && m_doc.dirty);
+  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(m_lastReplaceUndo.valid);
+}
+
+void MainWindow::setDirty(bool dirty) {
+  if (m_doc.dirty == dirty) return;
+  m_doc.dirty = dirty;
+  updateWindowTitle();
+  updateDocumentActions();
+  updateStatusBar();
+}
+
+void MainWindow::updateWindowTitle() {
+  QString title;
+  if (m_mode == Mode::Game) title = "ASTra - AST Editor (Game Mode)";
+  else title = "ASTra - AST Editor (Standalone)";
+
+  if (m_mode == Mode::Standalone && !m_doc.path.isEmpty()) {
+    title += QString(" — %1").arg(QFileInfo(m_doc.path).fileName());
+  }
+  if (m_doc.dirty) title += " *";
+  setWindowTitle(title);
+}
+
+void MainWindow::startIndexing(const QString& displayName,
+                               const QString& rootPath,
+                               const QString& baseContentDir,
+                               const QString& updateContentDir) {
+  ++m_treeToken;
+  m_tree->clear();
+  m_parseKeysInFlight.clear();
+  m_parsedKeysDone.clear();
+
+  if (m_header) {
+    m_header->setText(QString("Game Mode: %1\n%2").arg(displayName, rootPath));
+  }
+
+  // Root node
+  auto* gameRoot = new QTreeWidgetItem(m_tree, QStringList() << displayName << rootPath);
+  gameRoot->setExpanded(true);
+
+  auto* baseBucket = new QTreeWidgetItem(gameRoot, QStringList() << "Base (indexing...)" << "");
+  baseBucket->setToolTip(0, baseContentDir);
+  baseBucket->setExpanded(true);
+
+  QTreeWidgetItem* updateBucket = nullptr;
+  if (!updateContentDir.trimmed().isEmpty()) {
+    updateBucket = new QTreeWidgetItem(gameRoot, QStringList() << "Update/Patch (indexing...)" << "");
+    updateBucket->setToolTip(0, updateContentDir);
+    updateBucket->setExpanded(false);
+  }
+
+  // Placeholder children so expand arrows exist immediately.
+  baseBucket->addChild(new QTreeWidgetItem(QStringList() << "(Indexing...)" << ""));
+  if (updateBucket) updateBucket->addChild(new QTreeWidgetItem(QStringList() << "(Indexing...)" << ""));
+
+    // Build bucket specs for the indexer (filesystem scan only).
+  // We intentionally scan *directories* recursively and avoid parsing AST contents here.
+  QVector<AstBucketSpec> buckets;
+
+  auto addIfDir = [&](const QString& bucketName, const QString& dirPath) {
+    if (dirPath.isEmpty()) return;
+    const QFileInfo fi(dirPath);
+    if (!fi.exists() || !fi.isDir()) return;
+    buckets.push_back(AstBucketSpec{bucketName, fi.absoluteFilePath()});
+  };
+
+  // Heuristic root selection (safe): scan a few well-known layout roots per platform/title.
+  // This prevents "0 ASTs" when a stored path is slightly off.
+  const QString root = QFileInfo(rootPath).absoluteFilePath();
+
+  QStringList baseCandidates;
+  if (!baseContentDir.isEmpty()) baseCandidates << baseContentDir;
+
+  // PS3 layout: <root>/PS3_GAME/USRDIR (common), sometimes just <root>/USRDIR.
+  const QString ps3Usrdir = QDir(root).filePath("PS3_GAME/USRDIR");
+  const QString ps3Game   = QDir(root).filePath("PS3_GAME");
+  const QString usrdir    = QDir(root).filePath("USRDIR");
+
+  // PS4 pkg-extracted layout often has Image0/ (and Sc0/), with data under Image0/.
+  const QString image0 = QDir(root).filePath("Image0");
+
+  // Xbox 360 extracted layout is commonly flat at <root>/ with default.xex present.
+  const QString defaultXex = QDir(root).filePath("default.xex");
+
+  // Prefer candidates that match detected layout.
+  const bool looksPs3 = QFileInfo(ps3Game).exists() && QFileInfo(ps3Game).isDir();
+  const bool looksPs4 = QFileInfo(image0).exists() && QFileInfo(image0).isDir();
+  const bool looksX360 = QFileInfo(defaultXex).exists();
+
+  if (looksPs3) {
+    // PS3: only index from the *content* dir so the tree doesn't show platform
+    // structural folders (PS3_GAME / USRDIR). This keeps the user focused on
+    // the actual archives.
+    baseCandidates.clear();
+
+    const QFileInfo fiUsrdir(ps3Usrdir);
+    const QFileInfo fiAltUsrdir(usrdir);
+    const QFileInfo fiProvided(baseContentDir);
+
+    if (fiUsrdir.exists() && fiUsrdir.isDir()) {
+      baseCandidates << fiUsrdir.absoluteFilePath();
+    } else if (fiAltUsrdir.exists() && fiAltUsrdir.isDir()) {
+      baseCandidates << fiAltUsrdir.absoluteFilePath();
+    } else if (!baseContentDir.isEmpty() && fiProvided.exists() && fiProvided.isDir()) {
+      baseCandidates << fiProvided.absoluteFilePath();
+    } else {
+      // Last resort: fall back to root, but this may show PS3_GAME/USRDIR nodes.
+      baseCandidates << root;
+    }
+  } else if (looksPs4) {
+    // Prefer Image0 for PS4; avoid showing an extra Image0 folder if possible.
+    baseCandidates.clear();
+    const QFileInfo fiImage0(image0);
+    if (fiImage0.exists() && fiImage0.isDir()) baseCandidates << fiImage0.absoluteFilePath();
+    else baseCandidates << root;
+  } else if (looksX360) {
+    baseCandidates.clear();
+    baseCandidates << root;
+  } else {
+    // Unknown: be permissive but still directory-only.
+    baseCandidates << root;
+  }
+
+  // De-dupe while preserving order.
+  QStringList uniq;
+  for (const auto& c : baseCandidates) {
+    const QString abs = QFileInfo(c).absoluteFilePath();
+    if (!uniq.contains(abs, Qt::CaseInsensitive)) uniq << abs;
+  }
+
+  for (const auto& c : uniq) addIfDir(QStringLiteral("Base"), c);
+
+  if (updateBucket) addIfDir(QStringLiteral("Update"), updateContentDir);
+
+  auto future = QtConcurrent::run([buckets]() {
+    return AstIndexer::indexBuckets(buckets);
+  });
+
+  auto* watcher = new QFutureWatcher<QVector<AstIndexEntry>>(this);
+  connect(watcher, &QFutureWatcher<QVector<AstIndexEntry>>::finished, this,
+          [this, watcher, gameRoot, baseBucket, updateBucket]() {
+            const auto entries = watcher->result();
+            watcher->deleteLater();
+            applyIndexToTree(entries, gameRoot, baseBucket, updateBucket);
+
+	            // UX: keep the important nodes opened so the user immediately sees ASTs.
+	            if (gameRoot) gameRoot->setExpanded(true);
+	            if (baseBucket) baseBucket->setExpanded(true);
+	            if (updateBucket) updateBucket->setExpanded(true);
+	            m_tree->resizeColumnToContents(0);
+	            m_tree->resizeColumnToContents(1);
+
+            statusBar()->showMessage("Ready");
+
+          });
+  statusBar()->showMessage("Indexing...");
+  watcher->setFuture(future);
+}
+
+void MainWindow::applyIndexToTree(const QVector<AstIndexEntry>& entries,
+                                  QTreeWidgetItem* gameRoot,
+                                  QTreeWidgetItem* baseBucket,
+                                  QTreeWidgetItem* updateBucket) {
+  if (!gameRoot) return;
+
+  const bool hadTree = (m_tree != nullptr);
+  if (hadTree) m_tree->setUpdatesEnabled(false);
+
+  if (baseBucket) baseBucket->takeChildren();
+  if (updateBucket) updateBucket->takeChildren();
+
+  int baseCount = 0;
+  int updateCount = 0;
+
+  // Folder node cache per bucket: "Base:folder/sub" -> item
+  QHash<QString, QTreeWidgetItem*> folderCache;
+
+  auto getOrCreateFolder = [&](QTreeWidgetItem* bucketItem,
+                               const QString& bucketName,
+                               const QString& relFolder) -> QTreeWidgetItem* {
+    if (!bucketItem || relFolder.isEmpty() || relFolder == ".") return bucketItem;
+
+    QString norm = relFolder;
+    norm.replace('\\', '/');
+    const auto parts = norm.split('/', Qt::SkipEmptyParts);
+
+    QTreeWidgetItem* parent = bucketItem;
+    QString built;
+    for (const auto& p : parts) {
+      if (!built.isEmpty()) built += "/";
+      built += p;
+      const QString key = bucketName + ":" + built;
+
+      if (auto* existing = folderCache.value(key, nullptr)) {
+        parent = existing;
+        continue;
+      }
+
+      auto* folder = new QTreeWidgetItem(parent, QStringList() << p << "");
+      folder->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+      folder->setExpanded(false);
+      applyItemIcon(folder, "FOLDER", true);
+      folderCache.insert(key, folder);
+      parent = folder;
+    }
+    return parent;
+  };
+
+  for (const auto& e : entries) {
+    QTreeWidgetItem* bucketItem = nullptr;
+    QString bucketName = e.bucketName;
+
+    if (bucketName.compare("Base", Qt::CaseInsensitive) == 0) {
+      bucketItem = baseBucket;
+      bucketName = "Base";
+      ++baseCount;
+    } else {
+      bucketItem = updateBucket;
+      bucketName = "Update";
+      ++updateCount;
+    }
+    if (!bucketItem) continue;
+
+    const QString relFolder = QFileInfo(e.relativePath).path();
+    QTreeWidgetItem* parent = getOrCreateFolder(bucketItem, bucketName, relFolder);
+
+    // Force correct columns: [0]=filename, [1]=bytes
+    QString astLabel = e.fileName;
+    const bool isQklRootAst = isLikelyQklAstPath(e.absolutePath);
+    const QString rootCacheKey = NameCache::makeKey(e.absolutePath,
+                                                    0,
+                                                    0,
+                                                    static_cast<quint64>(e.fileSize),
+                                                    QStringLiteral("ASTROOT"));
+    const QString cachedRootName = m_nameCache.lookup(rootCacheKey);
+    if (!isQklRootAst && !cachedRootName.isEmpty() && !isQklStyleFriendlyBase(cachedRootName)) {
+      astLabel = QString("%1.ast (%2)").arg(cachedRootName, e.fileName);
+    }
+
+    auto* ast = new QTreeWidgetItem(parent, QStringList()
+                                            << astLabel
+                                            << formatBytes(static_cast<qulonglong>(e.fileSize)));
+
+    ast->setData(0, Qt::UserRole, e.absolutePath);
+    ast->setData(0, Qt::UserRole + 60, rootCacheKey);
+    const QString astTip = buildTreeItemTooltip(e.fileName, "AST", QFileInfo(e.absolutePath).path(), e.absolutePath, false);
+    ast->setToolTip(0, astTip);
+    ast->setToolTip(1, QDir::toNativeSeparators(e.absolutePath));
+    ast->setToolTip(2, QDir::toNativeSeparators(e.absolutePath));
+    ast->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+    applyItemIcon(ast, "AST");
+
+    // Stub parsing behind expand
+    ast->addChild(new QTreeWidgetItem(QStringList() << "Expand to parse..." << ""));
+
+    // Warm the top-level AST name cache in the background so strong names are available
+    // even when the user never expands the AST tree.
+    if (!isQklRootAst && cachedRootName.isEmpty()) {
+      const QString astPath = e.absolutePath;
+      const QString treeKey = makeTreeCacheKey(ast);
+      const quint64 token = m_treeToken;
+      auto* watcher = new QFutureWatcher<std::tuple<QString, QString, bool>>(this);
+      connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, token, treeKey, rootCacheKey, originalFileName = e.fileName]() {
+        const auto [chosen, kind, hasApt] = watcher->result();
+        watcher->deleteLater();
+        if (token != m_treeToken) return;
+        if ((chosen.isEmpty() && kind.isEmpty() && !hasApt) || isQklStyleFriendlyBase(chosen)) return;
+        QTreeWidgetItem* astItem = findTreeItemByCacheKey(m_tree, treeKey);
+        if (!astItem) return;
+        if (!chosen.isEmpty()) {
+          astItem->setText(0, QString("%1.ast (%2)").arg(chosen, originalFileName));
+        }
+        m_nameCache.putMeta(rootCacheKey, chosen, kind, hasApt);
+      });
+      watcher->setFuture(QtConcurrent::run([astPath]() -> std::tuple<QString, QString, bool> {
+        try {
+          std::string err;
+          auto idxOpt = gf::core::AstArchive::readIndex(std::filesystem::path(astPath.toStdString()), &err);
+          if (!idxOpt) return {QString(), QString(), false};
+          return deriveFriendlyAstContainerMeta(*idxOpt);
+        } catch (...) {
+          return {QString(), QString(), false};
+        }
+      }));
+    }
+  }
+
+  if (baseBucket) {
+    baseBucket->setText(0, QString("Base (%1 ASTs)").arg(baseCount));
+    baseBucket->setText(1, "");
+    // keep tooltip path
+  }
+  if (updateBucket) {
+    updateBucket->setText(0, QString("Update/Patch (%1 ASTs)").arg(updateCount));
+    updateBucket->setText(1, "");
+  }
+
+  if (baseBucket && baseBucket->childCount() == 0) {
+    baseBucket->addChild(new QTreeWidgetItem(QStringList() << "(No AST files found)" << ""));
+  }
+  if (updateBucket && updateBucket->childCount() == 0) {
+    updateBucket->addChild(new QTreeWidgetItem(QStringList() << "(No AST files found)" << ""));
+  }
+
+  if (hadTree) {
+    m_tree->setUpdatesEnabled(true);
+    m_tree->viewport()->update();
+  }
+}
+
+
+void MainWindow::onItemExpanded(QTreeWidgetItem* item) {
+  if (!item) return;
+
+  const QString path = item->data(0, Qt::UserRole).toString();
+  if (path.isEmpty()) return;
+
+  const qulonglong baseOffset = item->data(0, Qt::UserRole + 1).toULongLong();
+  const qulonglong maxReadable = item->data(0, Qt::UserRole + 2).toULongLong();
+  const bool isEmbedded = item->data(0, Qt::UserRole + 3).toBool();
+  clearAptViewer();
+
+  const QString cacheKey = isEmbedded ? QString("%1@%2@%3").arg(path).arg(baseOffset).arg(maxReadable) : path;
+  // If we've already populated this node, don't re-parse.
+  if (m_parsedKeysDone.contains(cacheKey)) return;
+  // If a parse is currently running for this key, ignore duplicate expand events.
+  if (m_parseKeysInFlight.contains(cacheKey)) return;
+  m_parseKeysInFlight.insert(cacheKey);
+
+  // UI: show busy progress while parsing.
+  ++m_parseInFlight;
+  if (m_parseProgress) {
+    m_parseProgress->setRange(0, 0); // indeterminate
+    m_parseProgress->setVisible(true);
+  }
+
+  // Clear placeholder children now (we'll repopulate once parse completes).
+  item->takeChildren();
+
+  struct ParseResult {
+    std::optional<gf::core::AstArchive::Index> idx;
+    QString message; // error or warning (may be set even when idx is valid)
+  };
+
+  // Run parsing off the UI thread.
+  auto* watcher = new QFutureWatcher<ParseResult>(this);
+  const quint64 token = m_treeToken;
+
+  connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, token, path, isEmbedded, baseOffset, maxReadable, cacheKey]() {
+    const ParseResult r = watcher->result();
+    const auto& idx = r.idx;
+    const QString msg = r.message.trimmed();
+    watcher->deleteLater();
+
+    // If the tree has been rebuilt (or we're closing), don't touch stale UI items.
+    if (token != m_treeToken || !m_tree) {
+      m_parseKeysInFlight.remove(cacheKey);
+      --m_parseInFlight;
+      if (m_parseProgress && m_parseInFlight <= 0) {
+        m_parseProgress->setVisible(false);
+        m_parseProgress->setRange(0, 100);
+        m_parseInFlight = 0;
+      }
+      return;
+    }
+
+    QTreeWidgetItem* item = findTreeItemByCacheKey(m_tree, cacheKey);
+    if (!item) {
+      m_parseKeysInFlight.remove(cacheKey);
+      --m_parseInFlight;
+      if (m_parseProgress && m_parseInFlight <= 0) {
+        m_parseProgress->setVisible(false);
+        m_parseProgress->setRange(0, 100);
+        m_parseInFlight = 0;
+      }
+      return;
+    }
+
+    // Mark parse state.
+    m_parseKeysInFlight.remove(cacheKey);
+    if (idx) m_parsedKeysDone.insert(cacheKey);
+
+    // Hide progress if nothing else in flight.
+    --m_parseInFlight;
+    if (m_parseProgress && m_parseInFlight <= 0) {
+      m_parseProgress->setVisible(false);
+      m_parseProgress->setRange(0, 100);
+      m_parseInFlight = 0;
+    }
+
+    if (!idx) {
+      // Allow retry on next expand.
+      m_parsedKeysDone.remove(cacheKey);
+      auto* err = new QTreeWidgetItem(QStringList()
+                                      << QString("(Failed to parse — expand to retry)")
+                                      << "Error"
+                                      << "");
+      err->setFlags(err->flags() & ~Qt::ItemIsSelectable);
+      if (!msg.isEmpty()) {
+        err->setToolTip(0, msg);
+        err->setToolTip(1, msg);
+        err->setToolTip(2, msg);
+        statusBar()->showMessage(QString("AST parse failed: %1").arg(msg), 8000);
+      } else {
+        statusBar()->showMessage("AST parse failed.", 5000);
+      }
+      item->addChild(err);
+      return;
+    }
+
+    // If we succeeded but have a message, treat it as a non-fatal warning (e.g., truncated index).
+    if (!msg.isEmpty()) {
+      auto* warn = new QTreeWidgetItem(QStringList() << QString("(Warning: %1)").arg(msg) << "Warning" << "");
+      warn->setFlags(warn->flags() & ~Qt::ItemIsSelectable);
+      warn->setToolTip(0, msg);
+      warn->setToolTip(1, msg);
+      warn->setToolTip(2, msg);
+      item->addChild(warn);
+      statusBar()->showMessage(QString("AST parsed with warnings: %1").arg(msg), 6000);
+    }
+
+    // Summary row
+    {
+      QString platformHint;
+      if (idx->is_ps3) platformHint = "PS3";
+      else if (idx->is_xbox) platformHint = "Xbox 360";
+      else platformHint = "Unknown";
+
+      auto* summary = new QTreeWidgetItem(QStringList()
+                                          << QString("(Index: %1 files, %2 tags, %3)")
+                                                 .arg(idx->file_count)
+                                                 .arg(idx->tag_count)
+                                                 .arg(platformHint)
+                                          << ""
+                                          << "");
+      summary->setFlags(summary->flags() & ~Qt::ItemIsSelectable);
+      item->addChild(summary);
+    }
+
+    const bool isQklRoot = (!isEmbedded && isLikelyQklAstPath(path));
+
+    // Embedded AST naming:
+// We intentionally do NOT re-categorize nested ASTs. We also avoid baking "_misc" style suffixes
+// into the label here. Instead, after child entries are materialized we may rename this node to
+// a strong friendly name derived from contained RSF/texture names (see below).
+if (isEmbedded) {
+  // no-op here; rename happens after children are created
+}
+
+
+    // Create EASE-style group folders for qkl_* root ASTs.
+    QTreeWidgetItem* grpTextures = nullptr;
+    QTreeWidgetItem* grpUI = nullptr;
+    QTreeWidgetItem* grpModels = nullptr;
+    QTreeWidgetItem* grpASTs = nullptr;
+    QTreeWidgetItem* grpConfigs = nullptr;
+    QTreeWidgetItem* grpDatabase = nullptr;
+    QTreeWidgetItem* grpUnknown = nullptr;
+
+    if (isQklRoot) {
+      grpTextures = ensureGroup(item, "Textures");
+      grpUI = ensureGroup(item, "UI");
+      grpModels = ensureGroup(item, "Models");
+      grpASTs = ensureGroup(item, "ASTs");
+      grpConfigs = ensureGroup(item, "Configs");
+      grpDatabase = ensureGroup(item, "Database");
+      grpUnknown = ensureGroup(item, "Unknown");
+    }
+
+    // Friendly Naming v2: RSF reference map + APT export-ish names.
+    const FriendlyOverrides overrides = build_friendly_overrides_v2(*idx, path, static_cast<std::uint64_t>(baseOffset));
+
+    // Entries
+    // Collect candidate names for the *container* embedded AST.
+// Priority: RSF base name -> texture base name.
+QStringList rsfBases;
+QStringList texBases;
+
+for (const auto& e : idx->entries) {
+      const std::string& rawLabel = !e.display_name.empty() ? e.display_name : e.name;
+      const QString fileName = QString("File_%1").arg(static_cast<qulonglong>(e.index), 5, 10, QChar('0'));
+      QString displayName = QString::fromStdString(rawLabel.empty() ? fileName.toStdString() : rawLabel);
+
+      // Apply extension hint if missing.
+      if (!e.ext_hint.empty() && !displayName.contains('.')) {
+        displayName += QString::fromStdString(e.ext_hint);
+      }
+
+      const bool rawLooksGeneric = fileName.startsWith("File_", Qt::CaseInsensitive);
+
+      // Friendly Naming v2: if we have a strong RSF/APT-derived name, display it EASE-style.
+      auto itO = overrides.byEntryIndex.find(e.index);
+      if (itO != overrides.byEntryIndex.end() && (rawLabel.empty() || rawLooksGeneric)) {
+        const QString ext = !e.ext_hint.empty() ? QString::fromStdString(e.ext_hint) : QString();
+        const QString base = QString::fromStdString(itO->second);
+        const QString fileNameWithExt = ext.isEmpty() ? fileName : (fileName + ext);
+        const QString baseWithExt = ext.isEmpty() ? base : (base + ext);
+        displayName = QString("%1 (%2)").arg(baseWithExt, fileNameWithExt);
+      }
+
+      // Type column should be file type only.
+      QString type = e.type_hint.empty() ? "Unknown" : QString::fromStdString(e.type_hint);
+      if (type == "AST/BGFA") type = "AST";
+      if (type == "zlib") type = "ZLIB";
+      if (type == "Text") type = "TXT";
+      if (type == "Txt") type = "TXT";
+
+      // Fallback classification based on filename when the parser couldn't infer it.
+      // This prevents obvious configs (e.g., .xml) from showing up under Unknown.
+      if (type == "Unknown") {
+        const QString lowerName = displayName.toLower();
+        if (lowerName.endsWith(".xml")) type = "XML";
+        else if (lowerName.endsWith(".json")) type = "JSON";
+        else if (lowerName.endsWith(".ini") || lowerName.endsWith(".cfg")) type = "INI";
+        else if (lowerName.endsWith(".txt") || lowerName.endsWith(".csv") || lowerName.endsWith(".log")) type = "TXT";
+        else if (lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")) type = "YAML";
+      }
+      const QString cacheKey = NameCache::makeKey(path,
+                                                  static_cast<quint64>(baseOffset),
+                                                  static_cast<quint64>(e.data_offset),
+                                                  static_cast<quint64>(e.compressed_size),
+                                                  type);
+
+      // Friendly Naming v4: apply persistent cache so names appear immediately (no re-derivation).
+      if (rawLabel.empty() || rawLooksGeneric) {
+        const QString cachedBase = m_nameCache.lookup(cacheKey);
+        if (!cachedBase.isEmpty()) {
+          const QString ext = !e.ext_hint.empty() ? QString::fromStdString(e.ext_hint) : QString();
+          const QString fileNameWithExt = ext.isEmpty() ? fileName : (fileName + ext);
+          const QString baseWithExt = ext.isEmpty() ? cachedBase : (cachedBase + ext);
+          displayName = QString("%1 (%2)").arg(baseWithExt, fileNameWithExt);
+        }
+      }
+
+      // Embedded AST containers use a metadata cache keyed by absolute embedded offset/size.
+      // This lets qkl_* roots show friendly child AST names immediately on open, without
+      // requiring a nested expansion to derive and persist the name first.
+      QString embeddedMetaKey;
+      if (type == "AST") {
+        const std::uint64_t absOffsetForMeta = baseOffset + e.data_offset;
+        embeddedMetaKey = cacheKeyForEmbedded(static_cast<quint64>(absOffsetForMeta),
+                                              static_cast<std::uint64_t>(e.compressed_size));
+        const QString cachedEmbeddedBase = m_nameCache.lookup(embeddedMetaKey);
+        if ((rawLabel.empty() || rawLooksGeneric) && !cachedEmbeddedBase.isEmpty()) {
+          displayName = QString("%1.ast (%2)").arg(cachedEmbeddedBase, fileName);
+        }
+      }
+
+      // If v2 overrides provided a strong base name, persist it for next time.
+      if (itO != overrides.byEntryIndex.end() && (rawLabel.empty() || rawLooksGeneric)) {
+        m_nameCache.put(cacheKey, QString::fromStdString(itO->second));
+      }
+
+// Track RSF/texture candidates for renaming this embedded AST node.
+// We prefer RSF names because they generally represent the "container" identity.
+if (isEmbedded) {
+  const QString lowerName = displayName.toLower();
+  const QString baseNoParen = displayName.section('(', 0, 0).trimmed(); // strip "(File_XXXXX...)"
+  if (type == "RSF") {
+    QString b = baseNoParen;
+    if (b.endsWith(".rsf", Qt::CaseInsensitive)) b.chop(4);
+    if (!b.isEmpty()) rsfBases << b;
+  } else if (type == "P3R" || type == "DDS" || type == "XPR" || type == "XPR2") {
+    QString b = baseNoParen;
+    // strip extension
+    const int dot = b.lastIndexOf('.');
+    if (dot > 0) b = b.left(dot);
+    // common suffix trims
+    auto trimSuffix = [&](const QString& sfx) {
+      if (b.endsWith(sfx, Qt::CaseInsensitive)) b.chop(sfx.size());
+    };
+    trimSuffix("_COL");
+    trimSuffix("_VECTOR");
+    trimSuffix("_NORM");
+    trimSuffix("_TRAN");
+    trimSuffix("_ALPHA");
+    trimSuffix("_MASK");
+    if (!b.isEmpty()) texBases << b;
+  }
+}
+
+
+      const QString info = QString("%1 bytes").arg(static_cast<qulonglong>(e.compressed_size));
+
+      auto* child = new QTreeWidgetItem(QStringList() << displayName << type << info);
+      applyItemIcon(child, type);
+
+      // Store absolute path for selection/viewer routing
+      // NOTE: for AST entries inside AST, `path` remains the parent AST file on disk.
+      child->setData(0, Qt::UserRole, path);
+
+      // For embedded entries we store baseOffset/maxReadable so we can parse children.
+        // NOTE: For embedded indexes, entry offsets are relative to the embedded base.
+        // Store absolute offsets into the parent AST file so we can expand nested ASTs.
+        const std::uint64_t absOffset = baseOffset + e.data_offset;
+        child->setData(0, Qt::UserRole + 1, static_cast<qulonglong>(absOffset));
+      child->setData(0, Qt::UserRole + 2, static_cast<qulonglong>(e.compressed_size));
+      child->setData(0, Qt::UserRole + 3, true);
+      child->setData(0, Qt::UserRole + 4, static_cast<qulonglong>(e.flags));
+      child->setData(0, Qt::UserRole + 6, static_cast<qulonglong>(e.index));
+
+      QString extraTip;
+      if (type == "AST") {
+        const QString cachedKind = !embeddedMetaKey.isEmpty() ? m_nameCache.lookupKind(embeddedMetaKey) : QString();
+        if (!cachedKind.isEmpty()) extraTip = QString("Derived Kind: %1").arg(cachedKind);
+      }
+      const QString childTip = buildTreeItemTooltip(displayName,
+                                                    type,
+                                                    info,
+                                                    path,
+                                                    true,
+                                                    static_cast<quint64>(absOffset),
+                                                    static_cast<quint64>(e.compressed_size),
+                                                    extraTip);
+      child->setToolTip(0, childTip);
+      child->setToolTip(1, childTip);
+      child->setToolTip(2, childTip);
+
+      // Only embedded AST entries should be expandable.
+      if (type == "AST") {
+        // Add a placeholder so the expander arrow shows up.
+        child->addChild(new QTreeWidgetItem(QStringList() << "(expand to parse)" << "" << ""));
+      }
+
+      QTreeWidgetItem* dest = item;
+if (isQklRoot) {
+  if ((type == "DDS" || type == "P3R" || type == "XPR" || type == "XPR2") && grpTextures) dest = grpTextures;
+  else if ((type == "APT" || type == "APT1" || type == "CONST" || type == "APTDATA") && grpUI) {
+    const QString grp = deriveUiGroupFromExportBase(displayName);
+    dest = ensureGroup(grpUI, grp);
+  }
+  else if ((type == "RSF" || type == "RSG" || type == "STRM") && grpModels) dest = grpModels;
+  else if (type == "AST" && grpASTs) {
+    // Embedded AST containers can be bucketed by cached metadata (computed once by the
+    // background scanner below).
+    const QString ck = cacheKeyForEmbedded(absOffset, static_cast<std::uint64_t>(e.compressed_size));
+    const QString kind = m_nameCache.lookupKind(ck);
+    if (kind == "UI" && grpUI) {
+      const QString grp = deriveUiGroupFromExportBase(displayName);
+      dest = ensureGroup(grpUI, grp);
+    }
+    else if (kind == "Textures" && grpTextures) dest = grpTextures;
+    else if (kind == "Models" && grpModels) dest = grpModels;
+    else dest = grpASTs;
+  }
+  else if ((type == "XML" || type == "TXT" || type == "TEXT" || type == "INI" || type == "CFG" || type == "CONF" || type == "JSON" || type == "YAML" || type == "YML" || type == "PY" || type == "PYC") && grpConfigs) dest = grpConfigs;
+  else if (type == "DB" && grpDatabase) dest = grpDatabase;
+  else if (grpUnknown) dest = grpUnknown;
+}
+      dest->addChild(child);
+
+      // Friendly Naming v3.1: Pre-name embedded AST containers WITHOUT requiring the user to
+      // expand each nested AST. We do a lightweight parse of the embedded AST index (directory)
+      // in the background and rename the child AST node to <RSF base>.ast (or texture base).
+      // This keeps browsing fast and matches the "find by RSF" workflow.
+      if (type == "AST") {
+        const QString originalLabel = child->text(0);
+        const QString originalBase = originalLabel.section('(', 0, 0).trimmed();
+        const bool looksGeneric = originalBase.startsWith("File_", Qt::CaseInsensitive);
+
+        const QString ck = cacheKeyForEmbedded(static_cast<quint64>(absOffset), static_cast<std::uint64_t>(e.compressed_size));
+        const QString cachedKind = m_nameCache.lookupKind(ck);
+        const QString cachedEmbeddedBase = m_nameCache.lookup(ck);
+
+        auto deriveEmbeddedAstMeta = [](const QString& parentPath,
+                                        quint64 childAbsOffset,
+                                        quint64 childMaxReadable) -> std::tuple<QString, QString, bool> {
+          try {
+            auto pickMostFrequent = [](const QStringList& values) -> QString {
+              if (values.isEmpty()) return {};
+              QHash<QString,int> freq;
+              QString best;
+              int bestN = -1;
+              for (const auto& v : values) freq[v] += 1;
+              for (auto it = freq.begin(); it != freq.end(); ++it) {
+                if (it.value() > bestN) { bestN = it.value(); best = it.key(); }
+              }
+              return best;
+            };
+
+            auto trimTextureBase = [](QString b) -> QString {
+              const int dot = b.lastIndexOf('.');
+              if (dot > 0) b = b.left(dot);
+              auto trimSuffix = [&](const QString& sfx) {
+                if (b.endsWith(sfx, Qt::CaseInsensitive)) b.chop(sfx.size());
+              };
+              trimSuffix("_COL");
+              trimSuffix("_VECTOR");
+              trimSuffix("_NORM");
+              trimSuffix("_TRAN");
+              trimSuffix("_ALPHA");
+              trimSuffix("_MASK");
+              return b;
+            };
+
+            std::function<void(const gf::core::AstArchive::Index&, quint64, int, QStringList&, QStringList&, QStringList&, bool&)> collectFromIndex;
+            collectFromIndex = [&](const gf::core::AstArchive::Index& idx, quint64 baseAbs, int depth, QStringList& rsfBasesLocal, QStringList& texBasesLocal, QStringList& aptBasesLocal, bool& hasAptLocal) {
+              if (depth > 1) return;
+              for (const auto& ee : idx.entries) {
+                const QString t = ee.type_hint.empty() ? QString() : QString::fromStdString(ee.type_hint).toUpper();
+                const QString n = !ee.display_name.empty() ? QString::fromStdString(ee.display_name)
+                                  : (!ee.name.empty() ? QString::fromStdString(ee.name) : QString());
+
+                if (t == "APT" || t == "CONST" || n.endsWith(".apt", Qt::CaseInsensitive) || n.endsWith(".const", Qt::CaseInsensitive)) {
+                  hasAptLocal = true;
+                  QString b = n;
+                  if (b.endsWith(".apt", Qt::CaseInsensitive)) b.chop(4);
+                  if (b.endsWith(".const", Qt::CaseInsensitive)) b.chop(6);
+                  if (!b.isEmpty() && !b.startsWith("File_", Qt::CaseInsensitive)) aptBasesLocal << b;
+                }
+
+                if (t == "RSF" || n.endsWith(".rsf", Qt::CaseInsensitive)) {
+                  QString b = n;
+                  if (b.endsWith(".rsf", Qt::CaseInsensitive)) b.chop(4);
+                  if (!b.isEmpty() && !b.startsWith("File_", Qt::CaseInsensitive)) rsfBasesLocal << b;
+                  continue;
+                }
+
+                if (t == "P3R" || t == "DDS" || t == "XPR" || t == "XPR2" ||
+                    n.endsWith(".p3r", Qt::CaseInsensitive) || n.endsWith(".dds", Qt::CaseInsensitive)) {
+                  QString b = trimTextureBase(n);
+                  if (!b.isEmpty() && !b.startsWith("File_", Qt::CaseInsensitive)) texBasesLocal << b;
+                  continue;
+                }
+
+                if (depth < 1 && (t == "AST" || n.endsWith(".ast", Qt::CaseInsensitive) || n.endsWith(".bgfa", Qt::CaseInsensitive))) {
+                  try {
+                    std::string nestedErr;
+                    auto nestedOpt = gf::core::AstArchive::readEmbeddedIndexFromFileSmart(
+                        std::filesystem::path(parentPath.toStdString()),
+                        static_cast<std::uint64_t>(baseAbs + ee.data_offset),
+                        static_cast<std::uint64_t>(ee.compressed_size),
+                        &nestedErr);
+                    if (nestedOpt) collectFromIndex(*nestedOpt, baseAbs + ee.data_offset, depth + 1, rsfBasesLocal, texBasesLocal, aptBasesLocal, hasAptLocal);
+                  } catch (...) {}
+                }
+              }
+            };
+
+            std::string err;
+            auto idxOpt = gf::core::AstArchive::readEmbeddedIndexFromFileSmart(
+                std::filesystem::path(parentPath.toStdString()),
+                static_cast<std::uint64_t>(childAbsOffset),
+                static_cast<std::uint64_t>(childMaxReadable),
+                &err);
+            if (!idxOpt) return {QString(), QString(), false};
+
+            QStringList rsfBasesLocal;
+            QStringList texBasesLocal;
+            QStringList aptBasesLocal;
+            bool hasAptLocal = false;
+            const QString kindLocal = classifyEmbeddedIndexKind(*idxOpt);
+            collectFromIndex(*idxOpt, childAbsOffset, 0, rsfBasesLocal, texBasesLocal, aptBasesLocal, hasAptLocal);
+
+            QString chosenLocal = pickMostFrequent(rsfBasesLocal);
+            if (chosenLocal.isEmpty()) chosenLocal = pickMostFrequent(aptBasesLocal);
+            if (chosenLocal.isEmpty()) chosenLocal = pickMostFrequent(texBasesLocal);
+            return {chosenLocal, kindLocal, hasAptLocal};
+          } catch (...) {
+            return {QString(), QString(), false};
+          }
+        };
+
+        // For qkl_* roots, derive child AST names during the initial parse so they show up
+        // immediately, not only after the user expands the nested AST later.
+        if (isQklRoot && (cachedKind.isEmpty() || cachedEmbeddedBase.isEmpty())) {
+          const auto derived = deriveEmbeddedAstMeta(path,
+                                                     static_cast<quint64>(absOffset),
+                                                     static_cast<quint64>(e.compressed_size));
+          const QString chosenNow = std::get<0>(derived);
+          const QString kindNow = std::get<1>(derived);
+          const bool hasAptNow = std::get<2>(derived);
+          if (!chosenNow.isEmpty() || !kindNow.isEmpty() || hasAptNow) {
+            const QString safeKind = kindNow.isEmpty() ? (hasAptNow ? QStringLiteral("UI") : QString()) : kindNow;
+            m_nameCache.putMeta(ck, chosenNow, safeKind, hasAptNow);
+            if (!chosenNow.isEmpty()) {
+              child->setText(0, QString("%1.ast (%2)").arg(chosenNow, originalBase));
+              const QString renamedTip = buildTreeItemTooltip(child->text(0), child->text(1), child->text(2), path, true,
+                                                              static_cast<quint64>(absOffset),
+                                                              static_cast<quint64>(e.compressed_size),
+                                                              safeKind.isEmpty() ? QString() : QString("Derived Kind: %1").arg(safeKind));
+              child->setToolTip(0, renamedTip);
+              child->setToolTip(1, renamedTip);
+              child->setToolTip(2, renamedTip);
+            }
+          }
+        }
+
+        // If we don't have cached metadata, scan in the background.
+        // We still prefer to only rename generic labels, but we ALWAYS cache kind/hasApt so we can bucket correctly.
+        if (m_nameCache.lookupKind(ck).isEmpty() || m_nameCache.lookup(ck).isEmpty()) {
+          const quint64 token = m_treeToken;
+          const QString parentPath = path;
+          const quint64 childAbsOffset = static_cast<quint64>(absOffset);
+          const quint64 childMaxReadable = static_cast<quint64>(e.compressed_size);
+
+          auto* nameWatcher = new QFutureWatcher<std::tuple<QString, QString, bool>>(this);
+          const QString cacheKey = ck;
+          const QString childTreeKey = makeTreeCacheKey(child);
+
+          connect(nameWatcher, &QFutureWatcherBase::finished, this, [this, nameWatcher, token, originalBase, cacheKey, childTreeKey]() {
+            const auto res = nameWatcher->result();
+            const QString chosen = std::get<0>(res);
+            const QString kind = std::get<1>(res);
+            const bool hasApt = std::get<2>(res);
+            nameWatcher->deleteLater();
+            if (chosen.isEmpty() && kind.isEmpty() && !hasApt) return;
+            if (token != m_treeToken) return; // stale
+            if (!m_tree) return;
+            QTreeWidgetItem* child = findTreeItemByCacheKey(m_tree, childTreeKey);
+            if (!child) return;
+
+            // Persist metadata (name + kind) so next expansion can bucket without re-scanning.
+            if (!cacheKey.isEmpty() && (!chosen.isEmpty() || !kind.isEmpty() || hasApt)) {
+              const QString safeKind = kind.isEmpty() ? (hasApt ? QStringLiteral("UI") : QString()) : kind;
+              if (!chosen.isEmpty()) m_nameCache.putMeta(cacheKey, chosen, safeKind, hasApt);
+              else {
+                // keep existing name if any, but store kind/hasApt
+                const QString existingName = m_nameCache.lookup(cacheKey);
+                m_nameCache.putMeta(cacheKey, existingName, safeKind, hasApt);
+              }
+            }
+            // Rename if a better name was found.
+            if (!chosen.isEmpty()) child->setText(0, QString("%1.ast (%2)").arg(chosen, originalBase));
+
+            // Move buckets if we learned more.
+            const QString decidedKind = !kind.isEmpty() ? kind : (hasApt ? QStringLiteral("UI") : QString());
+            const QString hoverTip = buildTreeItemTooltip(child->text(0), child->text(1), child->text(2),
+                                                          child->data(0, Qt::UserRole).toString(), true,
+                                                          child->data(0, Qt::UserRole + 1).toULongLong(),
+                                                          child->data(0, Qt::UserRole + 2).toULongLong(),
+                                                          decidedKind.isEmpty() ? QString() : QString("Derived Kind: %1").arg(decidedKind));
+            child->setToolTip(0, hoverTip);
+            child->setToolTip(1, hoverTip);
+            child->setToolTip(2, hoverTip);
+            if (!decidedKind.isEmpty()) {
+              QTreeWidgetItem* p = child->parent();
+              if (p) {
+                QTreeWidgetItem* root = p->parent();
+                if (root) {
+                  // Remove from current parent
+                  const int idx = p->indexOfChild(child);
+                  if (idx >= 0) p->takeChild(idx);
+
+                  // Find target group (or fall back to current)
+                  QTreeWidgetItem* target = nullptr;
+                  for (int i=0;i<root->childCount();++i) {
+                    if (QString::compare(root->child(i)->text(0), decidedKind, Qt::CaseInsensitive) == 0) { target = root->child(i); break; }
+                  }
+                  if (target) target->addChild(child);
+                  else p->addChild(child);
+                }
+              }
+            }
+          });
+
+          auto futName = QtConcurrent::run([parentPath, childAbsOffset, childMaxReadable, deriveEmbeddedAstMeta]() -> std::tuple<QString, QString, bool> {
+            return deriveEmbeddedAstMeta(parentPath, childAbsOffset, childMaxReadable);
+          });
+
+          nameWatcher->setFuture(futName);
+        }
+      }
+    }
+// After materializing children, if this is an embedded AST and it still has a generic name,
+// rename it to a strong friendly container name:
+//   1) <RSF base>.ast
+//   2) <texture base>.ast
+if (isEmbedded) {
+  const QString originalLabel = item->text(0);
+  const QString originalBase = originalLabel.section('(', 0, 0).trimmed();
+  const bool looksGeneric = originalBase.startsWith("File_", Qt::CaseInsensitive);
+
+  if (looksGeneric) {
+    QString chosen;
+
+    // Choose the most frequent RSF base if present
+    if (!rsfBases.isEmpty()) {
+      QHash<QString,int> freq;
+      for (const auto& b : rsfBases) freq[b] += 1;
+      int bestN = -1;
+      for (auto it = freq.begin(); it != freq.end(); ++it) {
+        if (it.value() > bestN) { bestN = it.value(); chosen = it.key(); }
+      }
+    }
+
+    // Otherwise, choose a texture-derived base (try longest common prefix-ish)
+    if (chosen.isEmpty() && !texBases.isEmpty()) {
+      // Prefer the shortest base (usually the shared prefix), but keep it readable.
+      QString best = texBases.first();
+      for (const auto& b : texBases) {
+        if (b.size() < best.size()) best = b;
+      }
+      chosen = best;
+    }
+
+    if (!chosen.isEmpty() && !isQklStyleFriendlyBase(chosen)) {
+      const QString newName = chosen + ".ast";
+      // Preserve the original File_XXXXX label in parentheses for stability.
+      item->setText(0, QString("%1 (%2)").arg(newName, originalBase));
+      // Persist container name for next run (so the AST name appears without expanding).
+      // For embedded AST containers, the stable metadata key is absolute embedded offset + readable size.
+      const qulonglong embeddedAbsOffsetForKey = item->data(0, Qt::UserRole + 1).toULongLong();
+      const qulonglong embeddedSizeForKey = item->data(0, Qt::UserRole + 2).toULongLong();
+      if (embeddedAbsOffsetForKey && embeddedSizeForKey) {
+        const QString ck = cacheKeyForEmbedded(static_cast<quint64>(embeddedAbsOffsetForKey),
+                                               static_cast<std::uint64_t>(embeddedSizeForKey));
+        const QString kind = m_nameCache.lookupKind(ck);
+        const bool hasApt = m_nameCache.lookupHasApt(ck);
+        m_nameCache.putMeta(ck, chosen, kind, hasApt);
+      }
+
+    }
+  }
+}
+
+
+
+  });
+
+  auto fut = QtConcurrent::run([path, isEmbedded, baseOffset, maxReadable]() -> ParseResult {
+    ParseResult r;
+    try {
+      std::string err;
+      if (!isEmbedded) {
+        r.idx = gf::core::AstArchive::readIndex(std::filesystem::path(path.toStdString()), &err);
+        r.message = QString::fromStdString(err);
+        return r;
+      }
+
+      // Embedded AST inside parent AST file.
+      r.idx = gf::core::AstArchive::readEmbeddedIndexFromFileSmart(std::filesystem::path(path.toStdString()),
+                                                                   static_cast<std::uint64_t>(baseOffset),
+                                                                   static_cast<std::uint64_t>(maxReadable),
+                                                                   &err);
+      r.message = QString::fromStdString(err);
+      return r;
+    } catch (const std::exception& ex) {
+      r.idx = std::nullopt;
+      r.message = QString("Exception during AST parse: %1").arg(ex.what());
+      return r;
+    } catch (...) {
+      r.idx = std::nullopt;
+      r.message = QString("Unknown exception during AST parse.");
+      return r;
+    }
+  });
+  watcher->setFuture(fut);
+}
+
+
+void MainWindow::onItemDoubleClicked(QTreeWidgetItem* item, int /*column*/) {
+  if (!item) return;
+
+  const QString path = item->data(0, Qt::UserRole).toString();
+  if (path.isEmpty()) {
+    // Folder/group node: expand/collapse.
+    if (item->childCount() > 0) item->setExpanded(!item->isExpanded());
+    return;
+  }
+
+  const QString type = item->text(1).trimmed().toUpper();
+  const bool isEmbedded = item->data(0, Qt::UserRole + 3).toBool();
+  const quint64 baseOffset = item->data(0, Qt::UserRole + 1).toULongLong();
+  const quint64 maxReadable = item->data(0, Qt::UserRole + 2).toULongLong();
+
+  auto isTextLikeType = [&](const QString& t) -> bool {
+    return (t == "XML" || t == "TXT" || t == "TEXT" || t == "INI" || t == "CFG" || t == "CONF" ||
+            t == "JSON" || t == "YAML" || t == "YML" || t == "LUA" || t == "JS" || t == "CSS" ||
+            t == "HTML" || t == "HTM");
+  };
+
+  // Double-click text/config: jump to the integrated Text tab (no extra window).
+  if (isTextLikeType(type)) {
+    if (m_viewTabs) m_viewTabs->setCurrentIndex(1);
+    showViewerForItem(item);
+    if (m_textView) m_textView->setFocus();
+    return;
+  }
+
+  // Double-click APT: explicitly load the APT tab (works regardless of dev mode).
+  if (type == "APT" || type == "APT1") {
+    QString aptErr;
+    if (!loadAptForItem(item, &aptErr))
+      statusBar()->showMessage(QString("APT load failed: %1").arg(aptErr), 7000);
+    return;
+  }
+
+  // Keep the integrated viewer as default; only spawn a new MainWindow in Developer Mode.
+  if (!devModeEnabled()) {
+    if (item->childCount() > 0) item->setExpanded(!item->isExpanded());
+    return;
+  }
+
+  auto* mw = new MainWindow();
+  mw->setAttribute(Qt::WA_DeleteOnClose);
+  mw->openStandaloneAst(path);
+  mw->show();
+}
+
+void MainWindow::onTreeContextMenu(const QPoint& pos) {
+  if (!m_tree) return;
+  auto* item = m_tree->itemAt(pos);
+  if (!item) return;
+
+  const QString path = item->data(0, Qt::UserRole).toString();
+  const bool hasPath = !path.isEmpty();
+  const bool isEmbedded = item->data(0, Qt::UserRole + 3).toBool();
+  const bool hasEntryIndex = item->data(0, Qt::UserRole + 6).isValid();
+  const bool isExtractableEntry = hasPath && (isEmbedded || hasEntryIndex);
+  const quint32 astFlags = static_cast<quint32>(item->data(0, Qt::UserRole + 4).toULongLong());
+  const QString type = item->text(1).trimmed();
+  const QString typeUpper = type.trimmed().toUpper();
+
+  auto isTextLikeType = [&](const QString& t) -> bool {
+    return (t == "XML" || t == "TXT" || t == "TEXT" || t == "INI" || t == "CFG" || t == "CONF" ||
+            t == "JSON" || t == "YAML" || t == "YML" || t == "LUA" || t == "JS" || t == "CSS" ||
+            t == "HTML" || t == "HTM");
+  };
+
+  auto isTextureLikeType = [&](const QString& t) -> bool {
+    return (t == "DDS" || t == "P3R" || t == "P3R2" || t == "P3R3" || t == "P3R4" || t == "TGA" || t == "PNG");
+  };
+
+  QList<QTreeWidgetItem*> selectedItems = m_tree->selectedItems();
+  if (!selectedItems.contains(item)) {
+    selectedItems.clear();
+    selectedItems.push_back(item);
+  }
+
+  QList<QTreeWidgetItem*> selectedExtractable;
+  for (auto* sel : selectedItems) {
+    if (!sel) continue;
+    const QString selPath = sel->data(0, Qt::UserRole).toString();
+    if (selPath.isEmpty()) continue;
+    const bool selEmbedded = sel->data(0, Qt::UserRole + 3).toBool();
+    const bool selHasEntry = sel->data(0, Qt::UserRole + 6).isValid();
+    if (selEmbedded || selHasEntry) selectedExtractable.push_back(sel);
+  }
+
+  QList<QTreeWidgetItem*> folderExtractable;
+  auto collectExtractableDescendants = [&](auto&& self, QTreeWidgetItem* node) -> void {
+    if (!node) return;
+    for (int i = 0; i < node->childCount(); ++i) {
+      QTreeWidgetItem* child = node->child(i);
+      if (!child) continue;
+      const QString childPath = child->data(0, Qt::UserRole).toString();
+      const bool childEmbedded = child->data(0, Qt::UserRole + 3).toBool();
+      const bool childHasEntry = child->data(0, Qt::UserRole + 6).isValid();
+      if (!childPath.isEmpty() && (childEmbedded || childHasEntry)) {
+        folderExtractable.push_back(child);
+      }
+      self(self, child);
+    }
+  };
+  const bool isFolderNode = !hasPath && item->childCount() > 0;
+  if (isFolderNode) {
+    collectExtractableDescendants(collectExtractableDescendants, item);
+  }
+
+  QMenu menu(this);
+
+  QAction* expandAct = nullptr;
+  QAction* collapseAct = nullptr;
+  QAction* refreshAct = nullptr;
+  if (item->childCount() > 0 || !hasPath) {
+    expandAct = menu.addAction("Expand All");
+    collapseAct = menu.addAction("Collapse All");
+    refreshAct = menu.addAction("Refresh Archive View");
+    menu.addSeparator();
+  }
+
+  QAction* openAct = nullptr;
+  if (devModeEnabled() && hasPath) openAct = menu.addAction("Open in New Window");
+
+  QAction* exportAct = nullptr;
+  QAction* extractSelectedAct = nullptr;
+  QAction* extractFolderAct = nullptr;
+  QAction* extractAllAct = nullptr;
+  if (hasPath) {
+    exportAct = menu.addAction("Extract...");
+    if (selectedExtractable.size() > 1) {
+      extractSelectedAct = menu.addAction(QString("Extract Selected (%1)").arg(selectedExtractable.size()));
+    }
+    if (isExtractableEntry) {
+      extractAllAct = menu.addAction("Extract All From Container...");
+    }
+  } else if (!folderExtractable.isEmpty()) {
+    extractFolderAct = menu.addAction(QString("Extract Folder (%1)").arg(folderExtractable.size()));
+  }
+
+  QAction* copyNameAct = nullptr;
+  QAction* copyPathAct = nullptr;
+  if (hasPath) {
+    menu.addSeparator();
+    copyNameAct = menu.addAction("Copy Name");
+    copyPathAct = menu.addAction("Copy Path");
+  }
+
+  QAction* textureReplaceAct = nullptr;
+  QAction* replaceAct = nullptr;
+  QAction* rebuildContainerToAct = nullptr;
+  if (isExtractableEntry) {
+    menu.addSeparator();
+    if (isTextureLikeType(typeUpper)) {
+      textureReplaceAct = menu.addAction("Replace Texture…");
+    }
+    replaceAct = menu.addAction("Import/Replace File…");
+    rebuildContainerToAct = menu.addAction("Rebuild Container To…");
+
+    if (textureReplaceAct && !editingEnabled()) {
+      textureReplaceAct->setEnabled(false);
+      textureReplaceAct->setToolTip("Editing is unavailable.");
+    }
+    if (replaceAct && !editingEnabled()) {
+      replaceAct->setEnabled(false);
+      replaceAct->setToolTip("Editing is unavailable.");
+    }
+    if (rebuildContainerToAct && !editingEnabled()) {
+      rebuildContainerToAct->setEnabled(false);
+      rebuildContainerToAct->setToolTip("Editing is unavailable.");
+    }
+  }
+
+  QAction* rawViewAct = nullptr;
+  if (isTextLikeType(typeUpper)) {
+    menu.addSeparator();
+    rawViewAct = menu.addAction("Open as Raw Viewer");
+  }
+
+  // "Load APT" — forces the APT tab to populate for embedded or standalone APT entries.
+  QAction* loadAptAct = nullptr;
+  if (typeUpper == "APT" || typeUpper == "APT1") {
+    menu.addSeparator();
+    loadAptAct = menu.addAction("Load APT");
+  }
+
+  QAction* renameFriendlyAct = nullptr;
+  if (isExtractableEntry && typeUpper == "AST") {
+    menu.addSeparator();
+    renameFriendlyAct = menu.addAction("Rename Friendly Name…");
+  }
+
+  auto chooseOutputDir = [&]() -> QString {
+    QSettings s(kSettingsOrg, kSettingsApp);
+    const QString key = QStringLiteral("ui/last_extract_dir");
+    const QString startDir = s.value(key, QFileInfo(path).absolutePath()).toString();
+    const QString outDir = QFileDialog::getExistingDirectory(this, "Choose Output Folder", startDir);
+    if (!outDir.isEmpty()) s.setValue(key, outDir);
+    return outDir;
+  };
+
+  auto exportEntry = [&](QTreeWidgetItem* sourceItem,
+                         gf::core::AstContainerEditor& editor,
+                         const QString& outDir,
+                         QStringList* failures = nullptr) -> bool {
+    if (!sourceItem) return false;
+    const QString entryTypeUpper = sourceItem->text(1).trimmed().toUpper();
+    const std::uint32_t entryIndex = static_cast<std::uint32_t>(sourceItem->data(0, Qt::UserRole + 6).toULongLong());
+
+    std::string localErr;
+    auto bytesOpt = editor.getEntryInflatedBytes(entryIndex, &localErr);
+    if (!bytesOpt.has_value()) {
+      if (failures) failures->push_back(QString("%1 — %2")
+                                        .arg(sourceItem->text(0).trimmed(),
+                                             QString::fromStdString(localErr)));
+      return false;
+    }
+
+    QByteArray outBytes(reinterpret_cast<const char*>(bytesOpt->data()), int(bytesOpt->size()));
+    QString exportTypeUpper = entryTypeUpper;
+
+    if (entryTypeUpper.startsWith("P3R")) {
+      std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
+      std::vector<std::uint8_t> rebuilt = p3rToDds(payload);
+      if (rebuilt.size() < 4 || std::memcmp(rebuilt.data(), "DDS ", 4) != 0) {
+        rebuilt = maybe_rebuild_ea_dds(payload);
+      }
+      if (rebuilt.size() >= 4 && std::memcmp(rebuilt.data(), "DDS ", 4) == 0) {
+        outBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
+        exportTypeUpper = "DDS";
+      }
+    }
+
+    const QString ext = defaultExtForTypeUpper(exportTypeUpper);
+    const QString outPath = uniqueOutputPath(outDir,
+                                             visibleBaseNameForItem(sourceItem, entryIndex),
+                                             ext);
+    const auto* bptr = reinterpret_cast<const std::byte*>(outBytes.constData());
+    gf::core::SafeWriteOptions opt;
+    opt.make_backup = false;
+    const auto r = gf::core::safe_write_bytes(outPath.toStdString(),
+                                              std::span<const std::byte>(bptr, static_cast<std::size_t>(outBytes.size())),
+                                              opt);
+    if (!r.ok) {
+      if (failures) failures->push_back(QString("%1 — %2")
+                                        .arg(sourceItem->text(0).trimmed(),
+                                             QString::fromStdString(r.message)));
+      return false;
+    }
+    return true;
+  };
+
+  auto doEmbeddedReplace = [&](bool validateTextureReplacement) {
+    if (!editingEnabled()) {
+      showInfoDialog(validateTextureReplacement ? "Replace Texture" : "Replace",
+                     "Editing is currently OFF.\n\nEditing is unavailable.");
+      return;
+    }
+
+    const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
+    const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
+
+    const QString containerPath = item->data(0, Qt::UserRole).toString();
+    if (containerPath.isEmpty()) return;
+
+    QString filter = "All Files (*)";
+    if (typeUpper == "AST") filter = "AST files (*.ast);;All Files (*)";
+    else if (typeUpper.startsWith("P3R")) filter = "DDS/P3R files (*.dds *.p3r);;All Files (*)";
+    else if (typeUpper == "DDS") filter = "DDS files (*.dds);;All Files (*)";
+    else if (typeUpper == "PNG") filter = "PNG files (*.png);;All Files (*)";
+    else if (typeUpper == "TGA") filter = "TGA files (*.tga);;All Files (*)";
+    else if (isTextLikeType(typeUpper)) filter = "Text files (*.xml *.cfg *.txt *.ini *.json *.csv);;All Files (*)";
+
+    const QString inPath = QFileDialog::getOpenFileName(this,
+                                                        validateTextureReplacement ? "Replace Texture" : "Import/Replace File",
+                                                        QDir::homePath(),
+                                                        filter);
+    if (inPath.isEmpty()) return;
+
+    QFile rf(inPath);
+    if (!rf.open(QIODevice::ReadOnly)) {
+      showErrorDialog(validateTextureReplacement ? "Replace Texture Failed" : "Replace Failed",
+                      "Failed to open replacement file.", QString(), false);
+      return;
+    }
+    QByteArray newBytes = rf.readAll();
+    rf.close();
+
+    std::string err;
+
+    // Walk ancestors: detect if this item lives inside a nested embedded AST.
+    QTreeWidgetItem* astAncestor = nullptr;
+    for (QTreeWidgetItem* p = item->parent(); p; p = p->parent()) {
+      if (p->text(1).compare("AST", Qt::CaseInsensitive) == 0 &&
+          p->data(0, Qt::UserRole + 6).isValid()) {
+        astAncestor = p;
+        break;
+      }
+    }
+    const bool isNestedEntry = (astAncestor != nullptr);
+    const std::uint32_t nestedOuterIdx = isNestedEntry
+        ? static_cast<std::uint32_t>(astAncestor->data(0, Qt::UserRole + 6).toULongLong())
+        : 0;
+
+    // Load outer container, reusing m_liveAstEditor if the path matches to preserve
+    // prior in-memory changes (e.g. a previous replace in the same session).
+    std::optional<gf::core::AstContainerEditor> outerEdOpt;
+    if (m_liveAstEditor && m_liveAstPath == containerPath) {
+      outerEdOpt = *m_liveAstEditor;
+    } else {
+      outerEdOpt = gf::core::AstContainerEditor::load(containerPath.toStdString(), &err);
+      if (!outerEdOpt.has_value()) {
+        showErrorDialog("Load Failed", "The AST container could not be loaded.",
+                        QString::fromStdString(err), false);
+        return;
+      }
+    }
+
+    // For nested entries: extract the embedded sub-AST and use it as the working editor.
+    std::optional<gf::core::AstContainerEditor> innerEdOpt;
+    if (isNestedEntry) {
+      std::string exErr;
+      auto nestedBytes = outerEdOpt->getEntryInflatedBytes(nestedOuterIdx, &exErr);
+      if (!nestedBytes) {
+        showErrorDialog("Extract Failed",
+                        QString("Cannot extract nested AST (entry #%1).").arg(nestedOuterIdx),
+                        QString::fromStdString(exErr), false);
+        return;
+      }
+      const QString tmpRoot = QDir::tempPath() + "/ASTra/nestedast";
+      QDir().mkpath(tmpRoot);
+      const QString nestedAstPath =
+          tmpRoot + QString("/nested_replace_%1.ast").arg(nestedOuterIdx);
+      QFile nf(nestedAstPath);
+      if (!nf.open(QIODevice::WriteOnly)) {
+        showErrorDialog("Temp Write Failed",
+                        QString("Cannot write nested AST to temp: %1").arg(nestedAstPath),
+                        QString(), false);
+        return;
+      }
+      nf.write(reinterpret_cast<const char*>(nestedBytes->data()),
+               static_cast<qint64>(nestedBytes->size()));
+      nf.close();
+      std::string loadErr;
+      innerEdOpt = gf::core::AstContainerEditor::load(nestedAstPath.toStdString(), &loadErr);
+      if (!innerEdOpt.has_value()) {
+        showErrorDialog("Load Failed", "Cannot parse nested AST.",
+                        QString::fromStdString(loadErr), false);
+        return;
+      }
+    }
+    // 'ed' is the working editor that owns entryIndex.
+    auto& ed = isNestedEntry ? innerEdOpt : outerEdOpt;
+
+    QString validationDetails;
+    if (validateTextureReplacement && (typeUpper == "DDS" || typeUpper.startsWith("P3R"))) {
+      auto oldStored = ed->getEntryStoredBytes(entryIndex);
+      std::optional<gf::textures::DdsInfo> oldInfo;
+      if (oldStored && !oldStored->empty()) {
+        oldInfo = tryParseTextureDdsInfo(std::span<const std::uint8_t>(oldStored->data(), oldStored->size()), astFlags);
+      }
+
+      QByteArray inspectBytes = newBytes;
+      if (typeUpper.startsWith("P3R") && inspectBytes.size() >= 4 && std::memcmp(inspectBytes.constData(), "DDS ", 4) == 0) {
+        std::uint8_t verByte = 0x02;
+        if (oldStored && oldStored->size() >= 4 && (*oldStored)[0] == 'P' && (*oldStored)[1] == '3' && (*oldStored)[2] == 'R') {
+          verByte = (*oldStored)[3];
+        }
+        const auto conv = ddsToP3r(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(inspectBytes.constData()),
+                                                                 static_cast<std::size_t>(inspectBytes.size())),
+                                   verByte);
+        inspectBytes = QByteArray(reinterpret_cast<const char*>(conv.data()), int(conv.size()));
+      }
+
+      auto newInfo = tryParseTextureDdsInfo(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(inspectBytes.constData()),
+                                                                          static_cast<std::size_t>(inspectBytes.size())),
+                                            astFlags);
+      if (!newInfo.has_value()) {
+        showErrorDialog("Replace Texture Failed",
+                        "The selected replacement file could not be parsed as a supported texture.",
+                        "Expected a valid DDS/P3R texture payload.",
+                        false);
+        return;
+      }
+
+      QStringList mismatchLines;
+      validationDetails = QString("Current texture: %1\nReplacement: %2")
+                              .arg(oldInfo.has_value() ? ddsInfoSummary(*oldInfo) : QString("Unknown"))
+                              .arg(ddsInfoSummary(*newInfo));
+      if (oldInfo.has_value()) {
+        if (oldInfo->width != newInfo->width) mismatchLines << QString("Width: %1 → %2").arg(oldInfo->width).arg(newInfo->width);
+        if (oldInfo->height != newInfo->height) mismatchLines << QString("Height: %1 → %2").arg(oldInfo->height).arg(newInfo->height);
+        if (oldInfo->mipCount != newInfo->mipCount) mismatchLines << QString("Mip Levels: %1 → %2").arg(oldInfo->mipCount).arg(newInfo->mipCount);
+        if (oldInfo->format != newInfo->format) mismatchLines << QString("Format: %1 → %2")
+          .arg(ddsFormatToString(oldInfo->format), ddsFormatToString(newInfo->format));
+      }
+      if (!mismatchLines.isEmpty()) {
+        const auto mismatch = QMessageBox::warning(
+            this,
+            "Texture Mismatch Warning",
+            QString("The replacement texture does not exactly match the current entry.\n\n%1\n\nContinue anyway?")
+                .arg(mismatchLines.join("\n")),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (mismatch != QMessageBox::Yes) return;
+      }
+    }
+
+    QString prompt = QString("This will MODIFY the AST container in memory until you Save.\n\nContainer:\n%1")
+                         .arg(QDir::toNativeSeparators(containerPath));
+    if (!validationDetails.isEmpty()) {
+      prompt += QString("\n\n%1").arg(validationDetails);
+    }
+    prompt += "\n\nContinue?";
+
+    const auto ans = QMessageBox::question(this,
+                                           "ASTra",
+                                           prompt,
+                                           QMessageBox::Yes | QMessageBox::No,
+                                           QMessageBox::No);
+    if (ans != QMessageBox::Yes) return;
+
+    QByteArray previewBytes = newBytes;
+
+    if (typeUpper.startsWith("P3R") && newBytes.size() >= 4 && std::memcmp(newBytes.constData(), "DDS ", 4) == 0) {
+      std::uint8_t verByte = 0x02;
+      const auto oldOpt = ed->getEntryStoredBytes(entryIndex);
+      if (oldOpt && oldOpt->size() >= 4 && (*oldOpt)[0] == 'P' && (*oldOpt)[1] == '3' && (*oldOpt)[2] == 'R') {
+        verByte = (*oldOpt)[3];
+      }
+      const auto conv = ddsToP3r(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
+                                                               static_cast<std::size_t>(newBytes.size())),
+                                 verByte);
+      newBytes = QByteArray(reinterpret_cast<const char*>(conv.data()), int(conv.size()));
+    }
+
+    QByteArray previousStoredBytes;
+    if (const auto oldStoredForUndo = ed->getEntryStoredBytes(entryIndex); oldStoredForUndo.has_value()) {
+      previousStoredBytes = QByteArray(reinterpret_cast<const char*>(oldStoredForUndo->data()),
+                                       int(oldStoredForUndo->size()));
+    }
+    QByteArray previousPreviewBytes;
+    const QVariant priorPreviewVar = item->data(0, Qt::UserRole + 31);
+    if (priorPreviewVar.isValid()) previousPreviewBytes = priorPreviewVar.toByteArray();
+
+    const auto spanBytes = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.data()),
+                                                         static_cast<std::size_t>(newBytes.size()));
+    if (!ed->replaceEntryBytes(entryIndex, spanBytes,
+                               gf::core::AstContainerEditor::ReplaceMode::PreserveZlibIfPresent, &err)) {
+      showErrorDialog(validateTextureReplacement ? "Replace Texture Failed" : "Replace Failed",
+                      "The entry could not be replaced.", QString::fromStdString(err), true);
+      return;
+    }
+
+    // For nested entries: rebuild the inner AST and repack it into the outer container.
+    if (isNestedEntry) {
+      std::string rebuildErr;
+      auto newNestedBytes = innerEdOpt->rebuild(&rebuildErr);
+      if (newNestedBytes.empty() && !rebuildErr.empty()) {
+        showErrorDialog("Rebuild Failed",
+                        "Cannot rebuild nested AST after replacement.",
+                        QString::fromStdString(rebuildErr), true);
+        return;
+      }
+      const auto nestedSpan = std::span<const std::uint8_t>(
+          newNestedBytes.data(), newNestedBytes.size());
+      if (!outerEdOpt->replaceEntryBytes(nestedOuterIdx, nestedSpan,
+                                         gf::core::AstContainerEditor::ReplaceMode::PreserveZlibIfPresent,
+                                         &err)) {
+        showErrorDialog("Repack Failed",
+                        "Cannot repack nested AST into outer container.",
+                        QString::fromStdString(err), true);
+        return;
+      }
+    }
+
+    item->setData(0, Qt::UserRole + 30, newBytes);
+    item->setData(0, Qt::UserRole + 31, previewBytes);
+
+    m_liveAstEditor = std::make_unique<gf::core::AstContainerEditor>(std::move(*outerEdOpt));
+    m_liveAstPath = containerPath;
+    m_lastReplaceUndo.valid = !previousStoredBytes.isEmpty();
+    m_lastReplaceUndo.containerPath = containerPath;
+    m_lastReplaceUndo.entryIndex = entryIndex;
+    m_lastReplaceUndo.previousStoredBytes = previousStoredBytes;
+    m_lastReplaceUndo.previousPreviewBytes = previousPreviewBytes;
+    m_lastReplaceUndo.itemCacheKey = makeTreeCacheKey(item);
+    m_lastReplaceUndo.displayName = item->text(0).trimmed();
+    if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(m_lastReplaceUndo.valid);
+    setDirty(true);
+
+    if (validateTextureReplacement && m_viewTabs && m_imageView) {
+      auto renderTexturePreviewNow = [this, astFlags, item](const QByteArray& bytes) -> bool {
+        if (bytes.isEmpty()) return false;
+        std::vector<std::uint8_t> payload(static_cast<std::size_t>(bytes.size()));
+        std::memcpy(payload.data(), bytes.constData(), static_cast<std::size_t>(bytes.size()));
+
+        const bool wasP3R = (payload.size() >= 3 &&
+                             (std::memcmp(payload.data(), "p3R", 3) == 0 ||
+                              std::memcmp(payload.data(), "P3R", 3) == 0));
+        const bool wasXpr2 = (payload.size() >= 4 && std::memcmp(payload.data(), "XPR2", 4) == 0);
+        const bool startsDds = (payload.size() >= 4 &&
+                                payload[0] == 'D' && payload[1] == 'D' &&
+                                payload[2] == 'S' && payload[3] == ' ');
+
+        std::span<const std::uint8_t> texBytes(payload.data(), payload.size());
+        std::vector<std::uint8_t> rebuilt;
+
+        if (wasXpr2) {
+          std::string name;
+          auto dds = gf::textures::rebuild_xpr2_dds_first(texBytes, &name);
+          if (dds.has_value() && !dds->empty()) {
+            rebuilt = std::move(*dds);
+            texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+          }
+        }
+
+        if (wasP3R) {
+          rebuilt = p3rToDds(texBytes);
+          if (auto infoSwap = gf::textures::parse_dds_info(std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size())); infoSwap.has_value()) {
+            texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+          } else {
+            rebuilt = maybe_rebuild_ea_dds(texBytes, astFlags);
+            if (!rebuilt.empty()) {
+              texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+            }
+          }
+        } else if (!startsDds) {
+          rebuilt = maybe_rebuild_ea_dds(texBytes, astFlags);
+          if (!rebuilt.empty()) {
+            texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+          }
+        }
+
+        auto info = gf::textures::parse_dds_info(texBytes);
+        if (!info.has_value()) return false;
+        m_currentTextureBytes = QByteArray(reinterpret_cast<const char*>(texBytes.data()), static_cast<int>(texBytes.size()));
+        m_currentTextureType = wasXpr2 ? QString("XPR2") : (wasP3R ? QString("P3R") : QString("DDS"));
+        m_currentTextureName = item ? item->text(0) : QString();
+        if (!renderCurrentTextureMip(0)) return false;
+        m_viewTabs->setCurrentIndex(2);
+        return true;
+      };
+
+      if (!renderTexturePreviewNow(previewBytes)) {
+        showViewerForItem(item);
+      }
+    } else {
+      showViewerForItem(item);
+    }
+
+    statusBar()->showMessage(validateTextureReplacement
+                                 ? "Replaced texture in memory. Use Save to write the AST and create a backup."
+                                 : "Replaced entry in memory. Use Save to write the AST and create a backup.",
+                             4500);
+  };
+
+  QAction* chosen = menu.exec(m_tree->viewport()->mapToGlobal(pos));
+  if (!chosen) return;
+
+  if (expandAct && chosen == expandAct) {
+    std::function<void(QTreeWidgetItem*)> expandRec = [&](QTreeWidgetItem* it) {
+      if (!it) return;
+      it->setExpanded(true);
+      for (int i = 0; i < it->childCount(); ++i) expandRec(it->child(i));
+    };
+    expandRec(item);
+    return;
+  }
+  if (collapseAct && chosen == collapseAct) {
+    std::function<void(QTreeWidgetItem*)> collapseRec = [&](QTreeWidgetItem* it) {
+      if (!it) return;
+      for (int i = 0; i < it->childCount(); ++i) collapseRec(it->child(i));
+      it->setExpanded(false);
+    };
+    collapseRec(item);
+    return;
+  }
+  if (refreshAct && chosen == refreshAct) {
+    refreshCurrentArchiveView();
+    return;
+  }
+  if (copyNameAct && chosen == copyNameAct) {
+    QApplication::clipboard()->setText(item->text(0).trimmed());
+    statusBar()->showMessage("Copied name to clipboard.", 2000);
+    return;
+  }
+  if (copyPathAct && chosen == copyPathAct) {
+    QApplication::clipboard()->setText(QDir::toNativeSeparators(path));
+    statusBar()->showMessage("Copied path to clipboard.", 2000);
+    return;
+  }
+
+  if (openAct && chosen == openAct) {
+    auto* mw = new MainWindow();
+    mw->setAttribute(Qt::WA_DeleteOnClose);
+    mw->openStandaloneAst(path);
+    mw->show();
+    return;
+  }
+
+  if (textureReplaceAct && chosen == textureReplaceAct) {
+    doEmbeddedReplace(true);
+    return;
+  }
+  if (replaceAct && chosen == replaceAct) {
+    doEmbeddedReplace(false);
+    return;
+  }
+
+  if (rebuildContainerToAct && chosen == rebuildContainerToAct) {
+    if (!editingEnabled()) {
+      showInfoDialog("Rebuild Container", "Editing is unavailable.");
+      return;
+    }
+
+    const QString containerPath = item->data(0, Qt::UserRole).toString();
+    if (containerPath.isEmpty()) return;
+
+    std::string err;
+    auto ed = gf::core::AstContainerEditor::load(containerPath.toStdString(), &err);
+    if (!ed.has_value()) {
+      showErrorDialog("Load Failed", "The AST container could not be loaded.", QString::fromStdString(err), false);
+      return;
+    }
+    const auto bytes = ed->rebuild(&err);
+    if (bytes.empty() && !err.empty()) {
+      showErrorDialog("Rebuild Failed", "The AST could not be rebuilt.", QString::fromStdString(err), true);
+      return;
+    }
+
+    QFileInfo fi(containerPath);
+    const QString suggested = fi.absoluteDir().absoluteFilePath(fi.completeBaseName() + "_rebuilt." + fi.suffix());
+    const QString outPath = QFileDialog::getSaveFileName(this,
+                                                         "Rebuild Container To",
+                                                         suggested,
+                                                         "EA Archives (*.ast *.bgfa);;All Files (*.*)");
+    if (outPath.isEmpty()) return;
+
+    const auto* bptr = reinterpret_cast<const std::byte*>(bytes.data());
+    gf::core::SafeWriteOptions opt;
+    opt.make_backup = true;
+    const auto r = gf::core::safe_write_bytes(outPath.toStdString(),
+                                              std::span<const std::byte>(bptr, bytes.size()),
+                                              opt);
+    if (!r.ok) {
+      showErrorDialog("Write Failed", "The AST container could not be written.", QString::fromStdString(r.message), true);
+      return;
+    }
+    statusBar()->showMessage(QString("Rebuilt container → %1").arg(QDir::toNativeSeparators(outPath)), 4000);
+    return;
+  }
+
+  if (rawViewAct && chosen == rawViewAct) {
+    showViewerForItem(item);
+    if (m_viewTabs) m_viewTabs->setCurrentIndex(0);
+    return;
+  }
+
+  if (loadAptAct && chosen == loadAptAct) {
+    QString aptErr;
+    if (!loadAptForItem(item, &aptErr)) {
+      statusBar()->showMessage(QString("APT load failed: %1").arg(aptErr), 7000);
+      showErrorDialog("Load APT Failed",
+                      QString("Could not load APT for: %1").arg(item->text(0)),
+                      aptErr);
+    }
+    return;
+  }
+
+  if (exportAct && chosen == exportAct) {
+    if (isExtractableEntry) {
+      const QString outDir = chooseOutputDir();
+      if (outDir.isEmpty()) return;
+
+      std::string err;
+      auto ed = gf::core::AstContainerEditor::load(path.toStdString(), &err);
+      if (!ed.has_value()) {
+        showErrorDialog("Extract Failed", "The AST container could not be loaded.", QString::fromStdString(err), false);
+        return;
+      }
+
+      QStringList failures;
+      int okCount = exportEntry(item, *ed, outDir, &failures) ? 1 : 0;
+      if (!failures.isEmpty()) {
+        showErrorDialog("Extract Failed",
+                        "The selected entry could not be extracted.",
+                        failures.join("\n"),
+                        false);
+        return;
+      }
+      statusBar()->showMessage(QString("Extracted %1 item to %2").arg(okCount).arg(QDir::toNativeSeparators(outDir)), 3000);
+      return;
+    }
+
+    exportCopyOf(path);
+    return;
+  }
+
+  if (extractFolderAct && chosen == extractFolderAct) {
+    const QString outDir = chooseOutputDir();
+    if (outDir.isEmpty()) return;
+
+    QMap<QString, std::shared_ptr<gf::core::AstContainerEditor>> editors;
+    QStringList failures;
+    int okCount = 0;
+
+    for (auto* sel : folderExtractable) {
+      const QString selPath = sel->data(0, Qt::UserRole).toString();
+      if (selPath.isEmpty()) continue;
+      if (!editors.contains(selPath)) {
+        std::string err;
+        auto loaded = gf::core::AstContainerEditor::load(selPath.toStdString(), &err);
+        if (!loaded.has_value()) {
+          failures.push_back(QString("%1 — %2").arg(QFileInfo(selPath).fileName(), QString::fromStdString(err)));
+          continue;
+        }
+        editors.insert(selPath, std::make_shared<gf::core::AstContainerEditor>(std::move(*loaded)));
+      }
+      auto editor = editors.value(selPath);
+      if (editor && exportEntry(sel, *editor, outDir, &failures)) ++okCount;
+    }
+
+    if (!failures.isEmpty()) {
+      showErrorDialog("Extract Folder",
+                      QString("Extracted %1 item(s), but some entries failed.").arg(okCount),
+                      failures.join("\n"),
+                      false);
+    } else {
+      showInfoDialog("Extract Folder", QString("Extracted %1 item(s) to:\n%2").arg(okCount).arg(QDir::toNativeSeparators(outDir)));
+    }
+    return;
+  }
+
+  if (extractSelectedAct && chosen == extractSelectedAct) {
+    const QString outDir = chooseOutputDir();
+    if (outDir.isEmpty()) return;
+
+    QMap<QString, std::shared_ptr<gf::core::AstContainerEditor>> editors;
+    QStringList failures;
+    int okCount = 0;
+
+    for (auto* sel : selectedExtractable) {
+      const QString selPath = sel->data(0, Qt::UserRole).toString();
+      if (selPath.isEmpty()) continue;
+      if (!editors.contains(selPath)) {
+        std::string err;
+        auto loaded = gf::core::AstContainerEditor::load(selPath.toStdString(), &err);
+        if (!loaded.has_value()) {
+          failures.push_back(QString("%1 — %2").arg(QFileInfo(selPath).fileName(), QString::fromStdString(err)));
+          continue;
+        }
+        editors.insert(selPath, std::make_shared<gf::core::AstContainerEditor>(std::move(*loaded)));
+      }
+      auto editor = editors.value(selPath);
+      if (editor && exportEntry(sel, *editor, outDir, &failures)) ++okCount;
+    }
+
+    if (!failures.isEmpty()) {
+      showErrorDialog("Extract Selected",
+                      QString("Extracted %1 item(s), but some entries failed.").arg(okCount),
+                      failures.join("\n"),
+                      false);
+    } else {
+      showInfoDialog("Extract Selected", QString("Extracted %1 item(s) to:\n%2").arg(okCount).arg(QDir::toNativeSeparators(outDir)));
+    }
+    return;
+  }
+
+  if (extractAllAct && chosen == extractAllAct) {
+    const QString outDir = chooseOutputDir();
+    if (outDir.isEmpty()) return;
+
+    std::string err;
+    auto ed = gf::core::AstContainerEditor::load(path.toStdString(), &err);
+    if (!ed.has_value()) {
+      showErrorDialog("Extract All Failed", "The AST container could not be loaded.", QString::fromStdString(err), false);
+      return;
+    }
+
+    QStringList failures;
+    int okCount = 0;
+    const auto& ents = ed->entries();
+    QFileInfo cfi(path);
+    const QString containerStem = sanitizeExportName(cfi.completeBaseName().isEmpty() ? cfi.fileName() : cfi.completeBaseName());
+
+    for (const auto& entry : ents) {
+      std::string localErr;
+      auto bytesOpt = ed->getEntryInflatedBytes(entry.index, &localErr);
+      if (!bytesOpt.has_value()) {
+        failures.push_back(QString("entry_%1 — %2").arg(entry.index).arg(QString::fromStdString(localErr)));
+        continue;
+      }
+
+      QByteArray outBytes(reinterpret_cast<const char*>(bytesOpt->data()), int(bytesOpt->size()));
+      QString exportTypeUpper = detectTypeUpperFromBytes(std::span<const std::uint8_t>(bytesOpt->data(), bytesOpt->size()));
+      QString name = bytesToEntryName(entry.nameBytes, entry.index);
+      QFileInfo entryFi(name);
+      QString baseName = entryFi.completeBaseName().isEmpty() ? sanitizeExportName(name) : sanitizeExportName(entryFi.completeBaseName());
+      if (baseName.isEmpty()) baseName = QString("%1_entry_%2").arg(containerStem).arg(entry.index);
+
+      if (exportTypeUpper.startsWith("P3R")) {
+        std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
+        std::vector<std::uint8_t> rebuilt = p3rToDds(payload);
+        if (rebuilt.size() < 4 || std::memcmp(rebuilt.data(), "DDS ", 4) != 0) {
+          rebuilt = maybe_rebuild_ea_dds(payload);
+        }
+        if (rebuilt.size() >= 4 && std::memcmp(rebuilt.data(), "DDS ", 4) == 0) {
+          outBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
+          exportTypeUpper = "DDS";
+        }
+      }
+
+      QString ext = entryFi.suffix().trimmed().toLower();
+      if (ext.isEmpty()) ext = defaultExtForTypeUpper(exportTypeUpper);
+      if (ext.isEmpty()) ext = "bin";
+
+      const QString outPath = uniqueOutputPath(outDir, baseName, ext);
+      const auto* bptr = reinterpret_cast<const std::byte*>(outBytes.constData());
+      gf::core::SafeWriteOptions opt;
+      opt.make_backup = false;
+      const auto r = gf::core::safe_write_bytes(outPath.toStdString(),
+                                                std::span<const std::byte>(bptr, static_cast<std::size_t>(outBytes.size())),
+                                                opt);
+      if (!r.ok) {
+        failures.push_back(QString("%1 — %2").arg(name, QString::fromStdString(r.message)));
+        continue;
+      }
+      ++okCount;
+    }
+
+    if (!failures.isEmpty()) {
+      showErrorDialog("Extract All",
+                      QString("Extracted %1 item(s), but some entries failed.").arg(okCount),
+                      failures.join("\n"),
+                      false);
+    } else {
+      showInfoDialog("Extract All", QString("Extracted %1 item(s) to:\n%2").arg(okCount).arg(QDir::toNativeSeparators(outDir)));
+    }
+    return;
+  }
+
+  if (renameFriendlyAct && chosen == renameFriendlyAct) {
+    const quint64 baseOffset = item->data(0, Qt::UserRole + 1).toULongLong();
+    const quint64 maxReadable = item->data(0, Qt::UserRole + 2).toULongLong();
+    const QString ck = cacheKeyForEmbedded(baseOffset, static_cast<std::uint64_t>(maxReadable));
+
+    const QString label = item->text(0);
+    const int paren = label.indexOf('(');
+    QString suffix;
+    if (paren >= 0) suffix = label.mid(paren).trimmed();
+
+    QString current = (paren >= 0 ? label.left(paren) : label).trimmed();
+    if (current.endsWith(".ast", Qt::CaseInsensitive)) current.chop(4);
+
+    bool ok = false;
+    const QString next = QInputDialog::getText(this,
+                                               "Rename Friendly Name",
+                                               "Friendly name (no extension):",
+                                               QLineEdit::Normal,
+                                               current,
+                                               &ok).trimmed();
+    if (!ok) return;
+    if (next.isEmpty()) {
+      showErrorDialog("Rename Friendly Name", "Name cannot be empty.", QString(), false);
+      return;
+    }
+
+    const QString newLabel = suffix.isEmpty() ? QString("%1.ast").arg(next)
+                                              : QString("%1.ast %2").arg(next, suffix);
+    item->setText(0, newLabel);
+
+    const QString kind = m_nameCache.lookupKind(ck);
+    const bool hasApt = m_nameCache.lookupHasApt(ck);
+    m_nameCache.putMeta(ck, next, kind, hasApt);
+
+    setDirty(true);
+    statusBar()->showMessage("Friendly name updated (unsaved).", 2500);
+    return;
+  }
+}
+
+void MainWindow::onSearchChanged(const QString& text) {
+  const QString needle = text.trimmed().toLower();
+
+  if (!m_tree) return;
+
+  // Empty search: show everything
+  if (needle.isEmpty()) {
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+      auto* top = m_tree->topLevelItem(i);
+      if (!top) continue;
+      // show all recursively
+      std::function<void(QTreeWidgetItem*)> showAll = [&](QTreeWidgetItem* it) {
+        it->setHidden(false);
+        for (int c = 0; c < it->childCount(); ++c) showAll(it->child(c));
+      };
+      showAll(top);
+    }
+    return;
+  }
+
+  for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+    auto* top = m_tree->topLevelItem(i);
+    if (!top) continue;
+    filterItemRecursive(top, needle);
+  }
+}
+
+bool MainWindow::filterItemRecursive(QTreeWidgetItem* item, const QString& needleLower) {
+  if (!item) return false;
+
+  bool anyChildVisible = false;
+  for (int i = 0; i < item->childCount(); ++i) {
+    anyChildVisible |= filterItemRecursive(item->child(i), needleLower);
+  }
+
+  const QString name = item->text(0).toLower();
+  const QString tip = item->toolTip(0).toLower();
+
+  const bool selfMatch = name.contains(needleLower) || tip.contains(needleLower);
+  const bool visible = selfMatch || anyChildVisible;
+
+  item->setHidden(!visible);
+  return visible;
+}
+
+void MainWindow::onCurrentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous) {
+  if (!current) return;
+
+if (m_suppressSelectionChange) return;
+
+// If the user is actively editing text and it's dirty, ask before switching selection.
+if (previous && m_textView && m_textView->document()->isModified() && (m_textExternalMode || m_textForceEdit)) {
+  QMessageBox::StandardButton choice = QMessageBox::question(
+      this,
+      "Unsaved Changes",
+      "You have unsaved text edits.",
+      QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+      QMessageBox::Cancel);
+
+  if (choice == QMessageBox::Cancel) {
+    m_suppressSelectionChange = true;
+    m_tree->setCurrentItem(previous);
+    m_suppressSelectionChange = false;
+    return;
+  }
+
+  if (choice == QMessageBox::Save) {
+    if (m_textApplyAction && m_textApplyAction->isEnabled()) {
+      m_textApplyAction->trigger();
+    }
+  } else if (choice == QMessageBox::Discard) {
+    m_textView->document()->setModified(false);
+  }
+}
+
+updateStatusSelection(current);
+
+  // Default to view-only until the user explicitly toggles Edit (embedded text only).
+  if (!m_textExternalMode) {
+    m_textForceEdit = false;
+    if (m_textEditAction) m_textEditAction->setChecked(false);
+  }
+
+  const QString path = current->data(0, Qt::UserRole).toString();
+  if (path.isEmpty()) {
+    // Not a file node; selection context is handled by the persistent status widgets.
+    m_doc.path.clear();
+    updateDocumentActions();
+    return;
+  }
+
+  // Even for embedded entries, the path is the backing container on disk.
+  m_doc.path = path;
+  updateDocumentActions();
+
+  // Document context for Save As / future editing.
+  m_doc.path = path;
+  updateDocumentActions();
+  showViewerForItem(current);
+}
+
+QString MainWindow::formatHexPreview(const QByteArray& data, quint64 baseOffset) {
+  QString out;
+  out.reserve(data.size() * 4);
+
+  // Keep the offset column a fixed width so alignment doesn't drift on very large
+  // archives (where absolute offsets exceed 0xFFFFFFFF).
+  // QByteArray::size() returns qsizetype; avoid std::max mixed-type issues.
+  const quint64 maxOffset = baseOffset + (data.isEmpty() ? 0ull : static_cast<quint64>(data.size() - 1));
+  const int offsetWidth = (maxOffset > 0xFFFFFFFFull) ? 16 : 8;
+
+  const int bytesPerLine = 16;
+  for (int i = 0; i < data.size(); i += bytesPerLine) {
+    const int remaining = static_cast<int>(data.size() - i);
+    const int n = std::min(bytesPerLine, remaining);
+
+    out += QString("%1  ").arg(baseOffset + static_cast<quint64>(i), offsetWidth, 16, QChar('0')).toUpper();
+
+    // Hex
+    for (int j = 0; j < bytesPerLine; ++j) {
+      if (j < n) {
+        const unsigned char b = static_cast<unsigned char>(data.at(i + j));
+        out += QString("%1 ").arg(b, 2, 16, QChar('0')).toUpper();
+      } else {
+        out += "   ";
+      }
+      if (j == 7) out += " ";
+    }
+
+    out += " |";
+    // ASCII
+    for (int j = 0; j < n; ++j) {
+      const unsigned char b = static_cast<unsigned char>(data.at(i + j));
+      const QChar c = (b >= 32 && b <= 126) ? QChar(b) : QChar('.');
+      out += c;
+    }
+    out += "|\n";
+  }
+  return out;
+}
+
+
+
+static QString aptSummaryToXmlFallback(const gf::apt::AptFile& file,
+                                      const QString& aptName,
+                                      const QString& constName) {
+  const auto& sum = file.summary;
+  auto esc = [](QString v) {
+    v.replace('&', "&amp;");
+    v.replace('<', "&lt;");
+    v.replace('>', "&gt;");
+    v.replace('"', "&quot;");
+    return v;
+  };
+  QString xml;
+  xml += QString("<apt name=\"%1\" const=\"%2\">\n").arg(esc(aptName), esc(constName));
+  xml += QString("  <summary screenWidth=\"%1\" screenHeight=\"%2\" frames=\"%3\" characters=\"%4\" imports=\"%5\" exports=\"%6\" aptDataOffset=\"0x%7\" />\n")
+             .arg(sum.screensizex)
+             .arg(sum.screensizey)
+             .arg(sum.framecount)
+             .arg(sum.charactercount)
+             .arg(sum.importcount)
+             .arg(sum.exportcount)
+             .arg(QString::number(qulonglong(sum.aptdataoffset), 16).toUpper());
+  xml += "  <imports>\n";
+  for (std::size_t i = 0; i < file.imports.size(); ++i) {
+    const auto& im = file.imports[i];
+    xml += QString("    <import index=\"%1\" movie=\"%2\" name=\"%3\" character=\"%4\" offset=\"0x%5\" />\n")
+               .arg(qulonglong(i))
+               .arg(esc(QString::fromStdString(im.movie)))
+               .arg(esc(QString::fromStdString(im.name)))
+               .arg(im.character)
+               .arg(QString::number(qulonglong(im.offset), 16).toUpper());
+  }
+  xml += "  </imports>\n";
+  xml += "  <exports>\n";
+  for (std::size_t i = 0; i < file.exports.size(); ++i) {
+    const auto& ex = file.exports[i];
+    xml += QString("    <export index=\"%1\" name=\"%2\" character=\"%3\" offset=\"0x%4\" />\n")
+               .arg(qulonglong(i))
+               .arg(esc(QString::fromStdString(ex.name)))
+               .arg(ex.character)
+               .arg(QString::number(qulonglong(ex.offset), 16).toUpper());
+  }
+  xml += "  </exports>\n";
+  xml += "  <frames>\n";
+  for (std::size_t i = 0; i < file.frames.size(); ++i) {
+    const auto& fr = file.frames[i];
+    xml += QString("    <frame index=\"%1\" itemCount=\"%2\" itemsOffset=\"0x%3\" offset=\"0x%4\" />\n")
+               .arg(qulonglong(i))
+               .arg(fr.frameitemcount)
+               .arg(QString::number(qulonglong(fr.items_offset), 16).toUpper())
+               .arg(QString::number(qulonglong(fr.offset), 16).toUpper());
+  }
+  xml += "  </frames>\n";
+  xml += "  <characters>\n";
+  for (std::size_t i = 0; i < file.characters.size(); ++i) {
+    const auto& ch = file.characters[i];
+    xml += QString("    <character index=\"%1\" type=\"%2\" signature=\"0x%3\" offset=\"0x%4\" />\n")
+               .arg(qulonglong(i))
+               .arg(ch.type)
+               .arg(QString::number(qulonglong(ch.signature), 16).toUpper())
+               .arg(QString::number(qulonglong(ch.offset), 16).toUpper());
+  }
+  xml += "  </characters>\n";
+  xml += "  <slices>\n";
+  for (std::size_t i = 0; i < file.slices.size(); ++i) {
+    const auto& sl = file.slices[i];
+    xml += QString("    <slice index=\"%1\" name=\"%2\" offset=\"0x%3\" size=\"%4\" />\n")
+               .arg(qulonglong(i))
+               .arg(esc(QString::fromStdString(sl.name)))
+               .arg(QString::number(qulonglong(sl.offset), 16).toUpper())
+               .arg(qulonglong(sl.size));
+  }
+  xml += "  </slices>\n";
+  xml += "</apt>\n";
+  return xml;
+}
+
+// ---------------------------------------------------------------------------
+// loadAptForItem  (v0.8.3)
+//   Unified helper for loading an embedded or standalone APT into the APT tab.
+//   Walks all tree ancestors to find the nearest embedded-AST ancestor, extracts
+//   the nested .ast context, finds the best matching .const, writes temp files,
+//   populates the APT tab tree, and switches to it.
+//   Sets m_textAptPath / m_textConstPath as a side-effect for the Text-tab XML
+//   mode used by showViewerForItem.
+//   Returns false and fills *errorOut on any failure (never silently drops errors).
+// ---------------------------------------------------------------------------
+bool MainWindow::loadAptForItem(QTreeWidgetItem* item, QString* errorOut) {
+  auto setErr = [&](const QString& msg) -> bool {
+    if (errorOut) *errorOut = msg;
+    return false;
+  };
+
+  if (!item) return setErr("No item selected.");
+
+  const QString path      = item->data(0, Qt::UserRole).toString();
+  const bool isEmbedded   = item->data(0, Qt::UserRole + 3).toBool();
+  const QString itemType  = item->text(1).trimmed();
+  const QFileInfo fi(path);
+
+  // Detect APT by type column (embedded) or file extension (standalone).
+  const bool isAptType = (itemType.compare("APT",  Qt::CaseInsensitive) == 0) ||
+                         (itemType.compare("APT1", Qt::CaseInsensitive) == 0);
+  const bool isAptExt  = (fi.suffix().compare("apt",  Qt::CaseInsensitive) == 0) ||
+                         (fi.suffix().compare("apt1", Qt::CaseInsensitive) == 0);
+  if (!isAptType && !isAptExt)
+    return setErr("Selected item is not an APT entry.");
+
+  if (path.isEmpty())
+    return setErr("Item has no associated file path.");
+
+  auto bytesToName = [](const std::vector<std::uint8_t>& v) -> QString {
+    size_t n = 0;
+    while (n < v.size() && v[n] != 0) ++n;
+    return QString::fromUtf8(reinterpret_cast<const char*>(v.data()), static_cast<int>(n));
+  };
+  auto isConstLike = [](const QString& n) -> bool {
+    return n.endsWith(".const",      Qt::CaseInsensitive) ||
+           n.endsWith(".const.bin",  Qt::CaseInsensitive) ||
+           n.endsWith(".const.dat",  Qt::CaseInsensitive) ||
+           n.compare("APT Constant File", Qt::CaseInsensitive) == 0;
+  };
+
+  // Default paths used for standalone; overridden in the embedded branch.
+  QString aptPath   = path;
+  QString constPath = fi.absolutePath() + "/" + fi.completeBaseName() + ".const";
+
+  if (isEmbedded) {
+    const int aptEntryIndex = item->data(0, Qt::UserRole + 6).toInt();
+    if (aptEntryIndex < 0)
+      return setErr("APT entry has no valid entry index.");
+
+    // ---- Walk ALL ancestors to find the nearest embedded-AST ancestor ----
+    // This correctly handles the grouped UI tree where the APT may be nested
+    // several folder/group nodes away from its containing AST node.
+    QTreeWidgetItem* astAncestor = nullptr;
+    for (QTreeWidgetItem* p = item->parent(); p; p = p->parent()) {
+      if (p->text(1).compare("AST", Qt::CaseInsensitive) == 0 &&
+          p->data(0, Qt::UserRole + 6).isValid()) {
+        astAncestor = p;
+        break;
+      }
+    }
+
+    // Load the root on-disk container.
+    auto loadOuter = [&]() -> std::optional<gf::core::AstContainerEditor> {
+      if (m_liveAstEditor && m_liveAstPath == path) return *m_liveAstEditor;
+      return gf::core::AstContainerEditor::load(path.toStdString());
+    };
+
+    std::optional<gf::core::AstContainerEditor> contextEditor;
+    QString contextStem = fi.completeBaseName();
+
+    if (astAncestor) {
+      // The APT lives inside a nested .ast; extract it first.
+      // Use direct file-offset reading instead of AstContainerEditor::getEntryInflatedBytes
+      // to avoid index mismatches on PS3/Xbox360 format containers where the LE-based
+      // AstContainerEditor::load may only parse a fraction of the real entries.
+      const std::uint64_t nestedOff =
+          astAncestor->data(0, Qt::UserRole + 1).toULongLong();
+      const std::uint64_t nestedSz =
+          astAncestor->data(0, Qt::UserRole + 2).toULongLong();
+      const std::uint32_t parentIdx =
+          static_cast<std::uint32_t>(astAncestor->data(0, Qt::UserRole + 6).toULongLong());
+
+      if (nestedSz == 0)
+        return setErr(QString("Nested AST entry #%1 has zero size.").arg(parentIdx));
+
+      auto rawBytes = read_file_range(path, nestedOff, nestedSz);
+      if (rawBytes.empty())
+        return setErr(QString("Cannot read nested AST bytes at offset 0x%1 (size %2).")
+                          .arg(nestedOff, 0, 16).arg(nestedSz));
+
+      // Inflate if the bytes look like a zlib stream; otherwise use as-is.
+      std::vector<std::uint8_t> nestedBytesVec;
+      if (rawBytes.size() >= 2 &&
+          looks_like_zlib_cmf_flg(rawBytes[0], rawBytes[1])) {
+        try {
+          nestedBytesVec = zlib_inflate_unknown_size(
+              std::span<const std::uint8_t>(rawBytes.data(), rawBytes.size()));
+        } catch (const std::exception& ex) {
+          return setErr(QString("Failed to decompress nested AST entry #%1: %2")
+                            .arg(parentIdx)
+                            .arg(QString::fromStdString(ex.what())));
+        }
+      } else {
+        nestedBytesVec = std::move(rawBytes);
+      }
+
+      if (nestedBytesVec.empty())
+        return setErr(QString("Nested AST entry #%1 decompressed to empty data.").arg(parentIdx));
+
+      const QString tmpRoot = QDir::tempPath() + "/ASTra/nestedast";
+      QDir().mkpath(tmpRoot);
+
+      QString safeStem = QFileInfo(astAncestor->text(0)).completeBaseName();
+      if (safeStem.isEmpty()) safeStem = "embedded_ast";
+      for (QChar c : {QChar('\\'), QChar('/'), QChar(':'),
+                      QChar('*'), QChar('?'), QChar('"'),
+                      QChar('<'), QChar('>'), QChar('|'), QChar(' ')})
+        safeStem.replace(c, '_');
+
+      const QString nestedAstPath =
+          tmpRoot + "/" + safeStem + QString("_nested_%1.ast").arg(parentIdx);
+
+      QFile nf(nestedAstPath);
+      if (!nf.open(QIODevice::WriteOnly))
+        return setErr(QString("Cannot write nested AST to temp: %1").arg(nestedAstPath));
+      nf.write(reinterpret_cast<const char*>(nestedBytesVec.data()),
+               static_cast<qint64>(nestedBytesVec.size()));
+      nf.close();
+
+      std::string loadErr;
+      auto nestedCtx = gf::core::AstContainerEditor::load(nestedAstPath.toStdString(), &loadErr);
+      if (!nestedCtx)
+        return setErr(QString("Cannot parse nested AST '%1': %2")
+                          .arg(QFileInfo(nestedAstPath).fileName(),
+                               QString::fromStdString(loadErr)));
+
+      contextEditor = std::move(*nestedCtx);
+      contextStem   = safeStem;
+    } else {
+      // No nested-AST ancestor: APT is directly in the root container.
+      contextEditor = loadOuter();
+      if (!contextEditor)
+        return setErr(QString("Cannot open container: %1")
+                          .arg(QDir::toNativeSeparators(path)));
+    }
+
+    const auto& ents = contextEditor->entries();
+    if (static_cast<size_t>(aptEntryIndex) >= ents.size())
+      return setErr(QString("APT entry index %1 out of range (%2 entries).")
+                        .arg(aptEntryIndex).arg(ents.size()));
+
+    // ---- Find the best matching .const entry ----
+    // Primary strategy: scan tree siblings of the APT item for a CONST-type entry.
+    // This uses the pre-parsed type column and never depends on nameBytes being populated,
+    // which fixes the common case where entries have no stored names (only File_XXXXX labels).
+    int constIdx = -1;
+    {
+      QTreeWidgetItem* parentTreeItem = item->parent();
+      if (parentTreeItem) {
+        int aptRow = -1;
+        for (int r = 0; r < parentTreeItem->childCount(); ++r)
+          if (parentTreeItem->child(r) == item) { aptRow = r; break; }
+
+        if (aptRow >= 0) {
+          int bestRow = -1, bestScore = std::numeric_limits<int>::max();
+          for (int r = 0; r < parentTreeItem->childCount(); ++r) {
+            auto* sib = parentTreeItem->child(r);
+            if (!sib || sib == item) continue;
+            const QString sibType = sib->text(1).trimmed();
+            const QString sibName = sib->text(0).trimmed();
+            // Accept CONST type, APT1 (EA's paired const companion), and
+            // entries whose type or name is "APT Constant File".
+            const bool isConstCandidate =
+                sibType.compare("CONST",             Qt::CaseInsensitive) == 0 ||
+                sibType.compare("APT1",              Qt::CaseInsensitive) == 0 ||
+                sibType.compare("APT Constant File", Qt::CaseInsensitive) == 0 ||
+                sibName.compare("APT Constant File", Qt::CaseInsensitive) == 0;
+            if (!isConstCandidate) continue;
+            // Prefer nearest; slightly prefer entries that appear before the APT.
+            int score = std::abs(r - aptRow) * 10;
+            if (r < aptRow) score -= 1;
+            if (score < bestScore) { bestScore = score; bestRow = r; }
+          }
+          if (bestRow >= 0)
+            constIdx = static_cast<int>(
+                parentTreeItem->child(bestRow)->data(0, Qt::UserRole + 6).toULongLong());
+        }
+      }
+    }
+
+    // Fallback: nameBytes-based scan (handles rare cases where the tree isn't materialised
+    // or the const entry is present under a different type label).
+    if (constIdx < 0) {
+      const QString aptName  = bytesToName(ents[static_cast<size_t>(aptEntryIndex)].nameBytes);
+      const QString baseName = QFileInfo(aptName).completeBaseName();
+
+      // Pass A: exact same-base .const name.
+      if (!baseName.isEmpty()) {
+        for (size_t i = 0; i < ents.size(); ++i) {
+          if (QString::compare(bytesToName(ents[i].nameBytes),
+                               baseName + ".const", Qt::CaseInsensitive) == 0) {
+            constIdx = static_cast<int>(i);
+            break;
+          }
+        }
+      }
+      // Pass B: nearby ±3 entries with a const-like file extension.
+      if (constIdx < 0) {
+        for (int off = -3; off <= 3; ++off) {
+          int k = aptEntryIndex + off;
+          if (k >= 0 && k < static_cast<int>(ents.size()) && k != aptEntryIndex &&
+              isConstLike(bytesToName(ents[static_cast<size_t>(k)].nameBytes))) {
+            constIdx = k;
+            break;
+          }
+        }
+      }
+      // Pass C: best-scored global scan; prefer same directory, prefer before APT.
+      if (constIdx < 0) {
+        const QString aptDir = QFileInfo(aptName).path();
+        int best = -1, bestScore2 = std::numeric_limits<int>::max();
+        for (size_t i = 0; i < ents.size(); ++i) {
+          if (static_cast<int>(i) == aptEntryIndex) continue;
+          const QString n = bytesToName(ents[i].nameBytes);
+          if (!isConstLike(n)) continue;
+          int score = std::abs(static_cast<int>(i) - aptEntryIndex) * 10;
+          if (!aptDir.isEmpty() &&
+              QString::compare(QFileInfo(n).path(), aptDir, Qt::CaseInsensitive) == 0)
+            score -= 3;
+          if (static_cast<int>(i) < aptEntryIndex) score -= 1;
+          if (score < bestScore2) { bestScore2 = score; best = static_cast<int>(i); }
+        }
+        constIdx = best;
+      }
+      // Pass D: content-based scan for "Apt constant file" magic in nearby entries
+      // (handles synthetic-named entries where nameBytes are empty/zeroed).
+      if (constIdx < 0) {
+        constexpr int kRange = 5;
+        constexpr std::string_view kAptConstMagic = "Apt cons";
+        for (int off = -kRange; off <= kRange && constIdx < 0; ++off) {
+          int k = aptEntryIndex + off;
+          if (k < 0 || k >= static_cast<int>(ents.size()) || k == aptEntryIndex) continue;
+          auto prefix = contextEditor->getEntryInflatedBytes(static_cast<std::uint32_t>(k));
+          if (prefix && prefix->size() >= 8 &&
+              std::string_view(reinterpret_cast<const char*>(prefix->data()), 8) == kAptConstMagic)
+            constIdx = k;
+        }
+      }
+    }
+
+    if (constIdx < 0)
+      return setErr(QString("No CONST entry found near APT entry #%1 "
+                            "(checked tree siblings and %2 container entries).")
+                        .arg(aptEntryIndex).arg(ents.size()));
+
+    std::string exErr2;
+    auto aptBytes   = contextEditor->getEntryInflatedBytes(
+                          static_cast<std::uint32_t>(aptEntryIndex), &exErr2);
+    auto constBytes = contextEditor->getEntryInflatedBytes(
+                          static_cast<std::uint32_t>(constIdx));
+    if (!aptBytes)
+      return setErr(QString("Cannot extract APT entry #%1: %2")
+                        .arg(aptEntryIndex).arg(QString::fromStdString(exErr2)));
+    if (!constBytes)
+      return setErr(QString("Cannot extract CONST entry #%1.").arg(constIdx));
+
+    // Store embedded save context so onAptSave() can write back to the container.
+    m_aptIsEmbedded           = true;
+    m_aptSaveAptEntryIdx      = aptEntryIndex;
+    m_aptSaveConstEntryIdx    = constIdx;
+    m_aptSaveContextIsNested  = (astAncestor != nullptr);
+    m_aptSaveOuterPath        = path; // on-disk root container path
+
+    // Write temp files.
+    const QString tmpRoot = QDir::tempPath() + "/ASTra/aptxml";
+    QDir().mkpath(tmpRoot);
+    const QString tmpBase = tmpRoot + "/" + contextStem + QString("_%1").arg(aptEntryIndex);
+    aptPath   = tmpBase + ".apt";
+    constPath = tmpBase + ".const";
+
+    { QFile f(aptPath);
+      if (!f.open(QIODevice::WriteOnly))
+        return setErr(QString("Cannot write temp APT: %1").arg(aptPath));
+      f.write(reinterpret_cast<const char*>(aptBytes->data()),
+              static_cast<qint64>(aptBytes->size())); }
+    { QFile f(constPath);
+      if (!f.open(QIODevice::WriteOnly))
+        return setErr(QString("Cannot write temp CONST: %1").arg(constPath));
+      f.write(reinterpret_cast<const char*>(constBytes->data()),
+              static_cast<qint64>(constBytes->size())); }
+  } else {
+    // Standalone APT — aptPath/constPath already point to the real files.
+    m_aptIsEmbedded          = false;
+    m_aptSaveAptEntryIdx     = -1;
+    m_aptSaveConstEntryIdx   = -1;
+    m_aptSaveContextIsNested = false;
+    m_aptSaveOuterPath.clear();
+  }
+
+  // Store paths for Text-tab XML mode (side-effect read by showViewerForItem).
+  m_textAptPath   = aptPath;
+  m_textConstPath = constPath;
+
+  const QString sourceLabel = item->text(0);
+  if (!populateAptViewerFromFiles(aptPath, constPath, sourceLabel)) {
+    // populateAptViewerFromFiles placed an error message in m_aptDetails.
+    return setErr(QString("Failed to parse APT: %1\n(CONST: %2)")
+                      .arg(QFileInfo(aptPath).fileName(),
+                           QFileInfo(constPath).fileName()));
+  }
+
+  // Switch to APT tab.
+  if (m_viewTabs && m_aptTab) {
+    const int aptTabIdx = m_viewTabs->indexOf(m_aptTab);
+    if (aptTabIdx >= 0) m_viewTabs->setCurrentIndex(aptTabIdx);
+  }
+  return true;
+}
+
+void MainWindow::clearAptViewer() {
+  if (m_aptTree) m_aptTree->clear();
+  if (m_aptDetails) m_aptDetails->clear();
+  if (m_aptPreviewScene) m_aptPreviewScene->clear();
+  m_currentAptFile.reset();
+  m_aptDirty = false;
+  m_aptUpdatingUi = false;
+  m_aptCurrentFrameIndex = 0;
+  m_aptCharPreviewIdx = -1;
+  m_aptIsEmbedded = false;
+  m_aptSaveContextIsNested = false;
+  m_aptSaveAptEntryIdx = -1;
+  m_aptSaveConstEntryIdx = -1;
+  m_aptSaveOuterPath.clear();
+
+  if (m_aptApplyAction)   m_aptApplyAction->setEnabled(false);
+  if (m_aptSaveAction)    m_aptSaveAction->setEnabled(false);
+  if (m_aptExportAction)  m_aptExportAction->setEnabled(false);
+  if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(false);
+  if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(false);
+  if (m_aptFrameSpin) {
+    m_aptFrameSpin->blockSignals(true);
+    m_aptFrameSpin->setRange(0, 0);
+    m_aptFrameSpin->setValue(0);
+    m_aptFrameSpin->setEnabled(false);
+    m_aptFrameSpin->blockSignals(false);
+  }
+  if (m_aptFrameCountLabel) m_aptFrameCountLabel->setText(" / 0 ");
+  if (m_aptPropStack) m_aptPropStack->setCurrentWidget(m_aptDetails);
+  refreshAptPreview();
+}
+
+bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QString& constPath, const QString& sourceLabel) {
+  clearAptViewer();
+  if (!m_aptTree) return false;
+
+  std::string err;
+  const auto fileOpt = gf::apt::read_apt_file(aptPath.toStdString(), constPath.toStdString(), &err);
+  if (!fileOpt) {
+    if (m_aptDetails) {
+      m_aptDetails->setPlainText(QString("Failed to parse APT.\n\n%1").arg(QString::fromStdString(err)));
+    }
+    return false;
+  }
+
+  m_currentAptFile = *fileOpt;
+  auto& file = *m_currentAptFile;
+  const auto& sum = file.summary;
+
+  // Initialise frame navigation controls.
+  m_aptCurrentFrameIndex = 0;
+  {
+    const int fc = static_cast<int>(file.frames.size());
+    if (m_aptFrameSpin) {
+      m_aptFrameSpin->blockSignals(true);
+      m_aptFrameSpin->setRange(0, std::max(0, fc - 1));
+      m_aptFrameSpin->setValue(0);
+      m_aptFrameSpin->setEnabled(fc > 0);
+      m_aptFrameSpin->blockSignals(false);
+    }
+    if (m_aptFrameCountLabel) m_aptFrameCountLabel->setText(QString(" / %1 ").arg(fc));
+    if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(false);
+    if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(fc > 1);
+  }
+  if (m_aptSaveAction)   m_aptSaveAction->setEnabled(true);
+  if (m_aptExportAction) m_aptExportAction->setEnabled(true);
+
+  m_aptTree->setUpdatesEnabled(false);
+
+  auto addLeaf = [&](QTreeWidgetItem* parent, const QString& name, const QString& value, const QString& details,
+                     int nodeType = kAptNodePlain, int index = -1,
+                     int ownerKind = 0, int ownerIndex = -1, int placementIndex = -1) {
+    auto* it = new QTreeWidgetItem(parent, QStringList() << name << value);
+    it->setData(0, Qt::UserRole, details);
+    it->setData(0, kAptRoleNodeType, nodeType);
+    it->setData(0, kAptRoleNodeIndex, index);
+    it->setData(0, kAptRoleOwnerKind, ownerKind);
+    it->setData(0, kAptRoleOwnerIndex, ownerIndex);
+    it->setData(0, kAptRolePlacementIndex, placementIndex);
+    return it;
+  };
+
+  QString rootLabel = sourceLabel.trimmed();
+  if (rootLabel.isEmpty()) rootLabel = QFileInfo(aptPath).fileName();
+  auto* root = new QTreeWidgetItem(m_aptTree, QStringList() << rootLabel << "APT");
+  root->setData(0, Qt::UserRole,
+                QString("APT File: %1\nCONST File: %2")
+                    .arg(QDir::toNativeSeparators(aptPath), QDir::toNativeSeparators(constPath)));
+  root->setData(0, kAptRoleNodeType, kAptNodePlain);
+  root->setData(0, kAptRoleNodeIndex, -1);
+
+  auto* summaryNode = new QTreeWidgetItem(root, QStringList() << "Summary" << QString("%1x%2")
+                                                                         .arg(sum.screensizex)
+                                                                         .arg(sum.screensizey));
+  summaryNode->setData(0, kAptRoleNodeType, kAptNodeSummary);
+  summaryNode->setData(0, kAptRoleNodeIndex, -1);
+  summaryNode->setData(0, Qt::UserRole,
+                       QString("Screen Size: %1 x %2\nFrames: %3\nCharacters: %4\nImports: %5\nExports: %6\nMovie Data Offset: 0x%7")
+                           .arg(sum.screensizex)
+                           .arg(sum.screensizey)
+                           .arg(sum.framecount)
+                           .arg(sum.charactercount)
+                           .arg(sum.importcount)
+                           .arg(sum.exportcount)
+                           .arg(QString::number(qulonglong(sum.aptdataoffset), 16).toUpper()));
+  addLeaf(summaryNode, "Screen Width", QString::number(sum.screensizex), QString("Screen Width: %1").arg(sum.screensizex), kAptNodeSummary);
+  addLeaf(summaryNode, "Screen Height", QString::number(sum.screensizey), QString("Screen Height: %1").arg(sum.screensizey), kAptNodeSummary);
+  addLeaf(summaryNode, "Frame Count", QString::number(file.frames.size()), QString("Frames: %1").arg(file.frames.size()), kAptNodeSummary);
+  addLeaf(summaryNode, "Character Count", QString::number(file.characters.size()), QString("Characters: %1").arg(file.characters.size()), kAptNodeSummary);
+  addLeaf(summaryNode, "Import Count", QString::number(file.imports.size()), QString("Imports: %1").arg(file.imports.size()), kAptNodeSummary);
+  addLeaf(summaryNode, "Export Count", QString::number(file.exports.size()), QString("Exports: %1").arg(file.exports.size()), kAptNodeSummary);
+  addLeaf(summaryNode, "APT Data Offset", QString("0x%1").arg(QString::number(qulonglong(sum.aptdataoffset), 16).toUpper()),
+          QString("APT Data Offset: 0x%1").arg(QString::number(qulonglong(sum.aptdataoffset), 16).toUpper()), kAptNodeSummary);
+
+  auto* importsNode = new QTreeWidgetItem(root, QStringList() << QString("Imports (%1)").arg(file.imports.size()) << QString::number(file.imports.size()));
+  importsNode->setData(0, Qt::UserRole, QString("Import table entries: %1").arg(file.imports.size()));
+  importsNode->setData(0, kAptRoleNodeType, kAptNodePlain);
+  importsNode->setData(0, kAptRoleNodeIndex, -1);
+  for (std::size_t i = 0; i < file.imports.size(); ++i) {
+    const auto& im = file.imports[i];
+    const QString movie = QString::fromStdString(im.movie);
+    const QString name = QString::fromStdString(im.name);
+    const QString label = QString("%1: %2 :: %3").arg(qulonglong(i)).arg(movie.isEmpty() ? "(movie?)" : movie, name.isEmpty() ? "(name?)" : name);
+    const QString detail = QString("Type: Import\nIndex: %1\nMovie: %2\nName: %3\nCharacter: %4\nOffset: 0x%5")
+                               .arg(qulonglong(i))
+                               .arg(movie.isEmpty() ? "(empty)" : movie)
+                               .arg(name.isEmpty() ? "(empty)" : name)
+                               .arg(im.character)
+                               .arg(QString::number(qulonglong(im.offset), 16).toUpper());
+    addLeaf(importsNode, label, QString::number(im.character), detail, kAptNodeImport, static_cast<int>(i));
+  }
+
+  auto* exportsNode = new QTreeWidgetItem(root, QStringList() << QString("Exports (%1)").arg(file.exports.size()) << QString::number(file.exports.size()));
+  exportsNode->setData(0, Qt::UserRole, QString("Export table entries: %1").arg(file.exports.size()));
+  exportsNode->setData(0, kAptRoleNodeType, kAptNodePlain);
+  exportsNode->setData(0, kAptRoleNodeIndex, -1);
+  for (std::size_t i = 0; i < file.exports.size(); ++i) {
+    const auto& ex = file.exports[i];
+    const QString name = QString::fromStdString(ex.name);
+    const QString detail = QString("Type: Export\nIndex: %1\nName: %2\nCharacter: %3\nOffset: 0x%4")
+                               .arg(qulonglong(i))
+                               .arg(name.isEmpty() ? "(empty)" : name)
+                               .arg(ex.character)
+                               .arg(QString::number(qulonglong(ex.offset), 16).toUpper());
+    addLeaf(exportsNode, QString("%1: %2").arg(qulonglong(i)).arg(name.isEmpty() ? "(empty)" : name), QString::number(ex.character), detail, kAptNodeExport, static_cast<int>(i));
+  }
+
+  auto* framesNode = new QTreeWidgetItem(root, QStringList() << QString("Frames (%1)").arg(file.frames.size()) << QString::number(file.frames.size()));
+  framesNode->setData(0, Qt::UserRole, QString("Frame table entries: %1").arg(file.frames.size()));
+  framesNode->setData(0, kAptRoleNodeType, kAptNodePlain);
+  framesNode->setData(0, kAptRoleNodeIndex, -1);
+  for (std::size_t i = 0; i < file.frames.size(); ++i) {
+    const auto& fr = file.frames[i];
+    const QString detail = QString("Type: Frame\nIndex: %1\nFrame Item Count: %2\nPlacement Count: %3\nItems Offset: 0x%4\nOffset: 0x%5")
+                               .arg(qulonglong(i))
+                               .arg(fr.frameitemcount)
+                               .arg(fr.placements.size())
+                               .arg(QString::number(qulonglong(fr.items_offset), 16).toUpper())
+                               .arg(QString::number(qulonglong(fr.offset), 16).toUpper());
+    auto* frameItem = addLeaf(framesNode, QString("Frame %1").arg(qulonglong(i)), QString::number(fr.frameitemcount), detail, kAptNodeFrame, static_cast<int>(i), 0, -1);
+    for (std::size_t p = 0; p < fr.placements.size(); ++p) {
+      const auto& pl = fr.placements[p];
+      const QString plName = pl.instance_name.empty() ? QString("Placement %1").arg(qulonglong(p))
+                                                      : QString("Placement %1 — %2").arg(qulonglong(p)).arg(QString::fromStdString(pl.instance_name));
+      addLeaf(frameItem, plName, aptPlacementValueText(pl),
+              aptPlacementDetailText(pl, "Root Movie", static_cast<int>(i), static_cast<int>(p)),
+              kAptNodePlacement, static_cast<int>(i), 0, -1, static_cast<int>(p));
+    }
+  }
+
+  const std::size_t localChCount = std::count_if(
+      file.characters.begin(), file.characters.end(),
+      [](const gf::apt::AptCharacter& c){ return c.type != 0; });
+  auto* charsNode = new QTreeWidgetItem(root, QStringList() << QString("Characters (%1)").arg(localChCount) << QString::number(localChCount));
+  charsNode->setData(0, Qt::UserRole, QString("Character table: %1 local, %2 total slots").arg(localChCount).arg(file.characters.size()));
+  charsNode->setData(0, kAptRoleNodeType, kAptNodePlain);
+  charsNode->setData(0, kAptRoleNodeIndex, -1);
+  for (std::size_t i = 0; i < file.characters.size(); ++i) {
+    const auto& ch = file.characters[i];
+    const QString typeName = (ch.type == 0)
+        ? QString("import slot")
+        : QString::fromStdString(gf::apt::aptCharTypeName(ch.type));
+    const QString detail = QString("Type: Character\nIndex: %1\nCharacter Type: %2 (%3)\nSignature: 0x%4\nOffset: 0x%5\nNested Frames: %6")
+                               .arg(qulonglong(i))
+                               .arg(typeName)
+                               .arg(ch.type)
+                               .arg(QString::number(qulonglong(ch.signature), 16).toUpper())
+                               .arg(QString::number(qulonglong(ch.offset), 16).toUpper())
+                               .arg(ch.frames.size());
+    auto* charItem = addLeaf(charsNode, QString("Character %1 — %2").arg(qulonglong(i)).arg(typeName), QString("type %1").arg(ch.type), detail, kAptNodeCharacter, static_cast<int>(i));
+    if (!ch.frames.empty()) {
+      auto* charFramesNode = new QTreeWidgetItem(charItem, QStringList() << QString("Frames (%1)").arg(ch.frames.size()) << QString::number(ch.frames.size()));
+      charFramesNode->setData(0, Qt::UserRole, QString("Nested frames for Character %1").arg(qulonglong(i)));
+      charFramesNode->setData(0, kAptRoleNodeType, kAptNodePlain);
+      charFramesNode->setData(0, kAptRoleNodeIndex, -1);
+      charFramesNode->setData(0, kAptRoleOwnerKind, 1);
+      charFramesNode->setData(0, kAptRoleOwnerIndex, static_cast<int>(i));
+      for (std::size_t fi = 0; fi < ch.frames.size(); ++fi) {
+        const auto& fr = ch.frames[fi];
+        const QString frameDetail = QString("Type: Frame\nOwner: Character %1\nIndex: %2\nFrame Item Count: %3\nPlacement Count: %4\nItems Offset: 0x%5\nOffset: 0x%6")
+                                        .arg(qulonglong(i))
+                                        .arg(qulonglong(fi))
+                                        .arg(fr.frameitemcount)
+                                        .arg(fr.placements.size())
+                                        .arg(QString::number(qulonglong(fr.items_offset), 16).toUpper())
+                                        .arg(QString::number(qulonglong(fr.offset), 16).toUpper());
+        auto* frameItem = addLeaf(charFramesNode, QString("Frame %1").arg(qulonglong(fi)), QString::number(fr.frameitemcount),
+                                  frameDetail, kAptNodeFrame, static_cast<int>(fi), 1, static_cast<int>(i));
+        for (std::size_t p = 0; p < fr.placements.size(); ++p) {
+          const auto& pl = fr.placements[p];
+          const QString plName = pl.instance_name.empty() ? QString("Placement %1").arg(qulonglong(p))
+                                                          : QString("Placement %1 — %2").arg(qulonglong(p)).arg(QString::fromStdString(pl.instance_name));
+          addLeaf(frameItem, plName, aptPlacementValueText(pl),
+                  aptPlacementDetailText(pl, QString("Character %1").arg(qulonglong(i)), static_cast<int>(fi), static_cast<int>(p)),
+                  kAptNodePlacement, static_cast<int>(fi), 1, static_cast<int>(i), static_cast<int>(p));
+        }
+      }
+    }
+  }
+
+  auto* slicesNode = new QTreeWidgetItem(root, QStringList() << QString("Slices (%1)").arg(file.slices.size()) << QString::number(file.slices.size()));
+  slicesNode->setData(0, Qt::UserRole, QString("APT file slices: %1").arg(file.slices.size()));
+  slicesNode->setData(0, kAptRoleNodeType, kAptNodePlain);
+  slicesNode->setData(0, kAptRoleNodeIndex, -1);
+  for (std::size_t i = 0; i < file.slices.size(); ++i) {
+    const auto& sl = file.slices[i];
+    const QString name = QString::fromStdString(sl.name);
+    const QString detail = QString("Type: Slice\nIndex: %1\nName: %2\nOffset: 0x%3\nSize: %4 bytes")
+                               .arg(qulonglong(i))
+                               .arg(name)
+                               .arg(QString::number(qulonglong(sl.offset), 16).toUpper())
+                               .arg(qulonglong(sl.size));
+    addLeaf(slicesNode, name, QString::number(qulonglong(sl.size)), detail, kAptNodeSlice, static_cast<int>(i));
+  }
+
+  root->setExpanded(true);
+  summaryNode->setExpanded(true);
+  importsNode->setExpanded(true);
+  exportsNode->setExpanded(true);
+  framesNode->setExpanded(true);
+  charsNode->setExpanded(true);
+  slicesNode->setExpanded(true);
+
+  m_aptTree->setUpdatesEnabled(true);
+  m_aptTree->setCurrentItem(summaryNode);
+  if (m_aptDetails) m_aptDetails->setPlainText(summaryNode->data(0, Qt::UserRole).toString());
+  refreshAptPreview();
+  return true;
+}
+
+std::optional<int> MainWindow::selectedAptFrameIndex() const {
+  if (!m_aptTree || !m_currentAptFile) return std::nullopt;
+  auto* item = m_aptTree->currentItem();
+  if (!item) return std::nullopt;
+
+  const int nodeType = item->data(0, kAptRoleNodeType).toInt();
+  const int frameIndex = item->data(0, kAptRoleNodeIndex).toInt();
+  const int ownerKind = item->data(0, kAptRoleOwnerKind).toInt();
+
+  if (ownerKind != 0) return std::nullopt;
+  if ((nodeType == kAptNodeFrame || nodeType == kAptNodePlacement) &&
+      frameIndex >= 0 && frameIndex < static_cast<int>(m_currentAptFile->frames.size())) {
+    return frameIndex;
+  }
+  return std::nullopt;
+}
+
+std::optional<int> MainWindow::selectedAptPlacementIndex() const {
+  if (!m_aptTree || !m_currentAptFile) return std::nullopt;
+  auto* item = m_aptTree->currentItem();
+  if (!item) return std::nullopt;
+
+  const int nodeType = item->data(0, kAptRoleNodeType).toInt();
+  const int ownerKind = item->data(0, kAptRoleOwnerKind).toInt();
+  const int placementIndex = item->data(0, kAptRolePlacementIndex).toInt();
+
+  if (nodeType != kAptNodePlacement || placementIndex < 0) return std::nullopt;
+  // Valid in both root-movie context (ownerKind==0) and character context (ownerKind==1).
+  return placementIndex;
+}
+
+// Returns a validated canvas size from APT summary dimensions.
+// Falls back to 1280x720 if dimensions are zero, 0xFFFFFFFF, or exceed 8192.
+static std::pair<qreal, qreal> resolveAptPreviewCanvasSize(const gf::apt::AptSummary& summary) {
+  constexpr std::uint32_t kInvalid = 0xFFFFFFFFu;
+  constexpr std::uint32_t kMaxSize = 8192u;
+  const std::uint32_t w = summary.screensizex;
+  const std::uint32_t h = summary.screensizey;
+  const qreal rw = (w > 0 && w != kInvalid && w <= kMaxSize) ? static_cast<qreal>(w) : 1280.0;
+  const qreal rh = (h > 0 && h != kInvalid && h <= kMaxSize) ? static_cast<qreal>(h) : 720.0;
+  return {rw, rh};
+}
+
+// Bridge: Transform2D (library) → QTransform (Qt).
+// Flash column-vector math: x'=a*x+c*y+tx, y'=b*x+d*y+ty
+// QTransform(m11,m12,m21,m22,dx,dy): x'=m11*x+m21*y+dx, y'=m12*x+m22*y+dy
+// → m11=a, m12=b, m21=c, m22=d, dx=tx, dy=ty.
+static QTransform transform2DToQt(const gf::apt::Transform2D& t) {
+  return QTransform(
+      static_cast<qreal>(t.a),  // m11
+      static_cast<qreal>(t.b),  // m12
+      static_cast<qreal>(t.c),  // m21
+      static_cast<qreal>(t.d),  // m22
+      static_cast<qreal>(t.tx), // dx
+      static_cast<qreal>(t.ty)  // dy
+  );
+}
+
+// Converts a flat RenderNode list (from gf::apt::renderAptFrame) into QGraphicsItems.
+static void renderNodesToScene(
+    const std::vector<gf::apt::RenderNode>& nodes,
+    int highlightRootPlacementIdx,
+    bool debugOverlay,
+    QGraphicsScene* scene)
+{
+  for (const gf::apt::RenderNode& node : nodes) {
+    const bool isHighlighted = (node.rootPlacementIndex == highlightRootPlacementIdx
+                                && highlightRootPlacementIdx >= 0);
+    // Distinguish root-level vs nested: count "→" (UTF-8 E2 86 92) separators in the chain label.
+    const int nestingDepth = static_cast<int>(
+        std::count(node.parentChainLabel.begin(), node.parentChainLabel.end(), '\xE2'));
+    const bool isRootLevel = (nestingDepth == 0);
+
+    // ── Import / unknown character placeholder ──────────────────────────────
+    // Shown when the character ID is not in the local table (runtime import).
+    if (node.kind == gf::apt::RenderNode::Kind::Unknown) {
+      const QTransform wt = transform2DToQt(node.worldTransform);
+      const QPointF origin = wt.map(QPointF(0.0, 0.0));
+      // Dashed orange border, semi-transparent fill.
+      const QPen impPen(isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0, 200),
+                        isHighlighted ? 2.5 : 1.5, Qt::DashLine);
+      const QBrush impBrush(QColor(255, 140, 0, isHighlighted ? 40 : 18));
+      const QRectF impRect(0.0, 0.0, 100.0, 36.0);
+      auto* impItem = scene->addRect(impRect, impPen, impBrush);
+      impItem->setTransform(wt);
+      const QString name = node.instanceName.empty()
+          ? QString("C%1").arg(node.characterId)
+          : QString::fromStdString(node.instanceName);
+      auto* lbl = scene->addSimpleText(QString("IMPORT %1\nD%2").arg(name).arg(node.placementDepth));
+      lbl->setPos(origin.x() + 3.0, origin.y() + 3.0);
+      lbl->setBrush(QBrush(isHighlighted ? QColor(255, 210, 64) : QColor(255, 160, 50, 200)));
+      continue;
+    }
+
+    // ── Sprite / Movie placeholder (empty frames, depth-limited, or unresolvable) ──
+    // Always draw a visible indicator so the placement is never silently invisible.
+    if (node.kind == gf::apt::RenderNode::Kind::Sprite ||
+        node.kind == gf::apt::RenderNode::Kind::Movie) {
+      const QTransform wt = transform2DToQt(node.worldTransform);
+      const QPointF origin = wt.map(QPointF(0.0, 0.0));
+      // Draw a small diamond at the placement origin.
+      const qreal r = isHighlighted ? 10.0 : 6.0;
+      const QColor col = isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0, 200);
+      const QPen diamPen(col, isHighlighted ? 2.0 : 1.5);
+      const QBrush diamBrush(QColor(col.red(), col.green(), col.blue(), isHighlighted ? 60 : 25));
+      QPolygonF diamond;
+      diamond << QPointF(0, -r) << QPointF(r, 0) << QPointF(0, r) << QPointF(-r, 0);
+      auto* diamItem = scene->addPolygon(diamond, diamPen, diamBrush);
+      diamItem->setPos(origin);
+      // Label with character id + depth (always); add parent chain in debug mode.
+      const QString name = node.instanceName.empty()
+          ? QString("C%1").arg(node.characterId)
+          : QString::fromStdString(node.instanceName);
+      QString lbl = QString("SPR %1\nD%2").arg(name).arg(node.placementDepth);
+      if (debugOverlay && !node.parentChainLabel.empty())
+        lbl += QString("\n%1").arg(QString::fromStdString(node.parentChainLabel));
+      auto* lblItem = scene->addSimpleText(lbl);
+      lblItem->setPos(origin + QPointF(r + 2.0, -r));
+      lblItem->setBrush(QBrush(col));
+      continue;
+    }
+
+    // ── Leaf character ───────────────────────────────────────────────────────
+    QRectF localRect;
+    if (node.localBounds) {
+      const gf::apt::AptBounds& b = *node.localBounds;
+      const qreal bw = static_cast<qreal>(b.right  - b.left);
+      const qreal bh = static_cast<qreal>(b.bottom - b.top);
+      if (bw > 0.0 && bh > 0.0)
+        localRect = QRectF(static_cast<qreal>(b.left), static_cast<qreal>(b.top), bw, bh);
+    }
+    if (!localRect.isValid() || localRect.width() < 1.0 || localRect.height() < 1.0)
+      localRect = QRectF(0.0, 0.0, 120.0, 48.0);
+
+    QPen pen;
+    QBrush brush;
+    if (isHighlighted) {
+      pen   = QPen(QColor(255, 210,  64), 3.0);
+      brush = QBrush(QColor(255, 210,  64, 70));
+    } else if (node.kind == gf::apt::RenderNode::Kind::Image) {
+      const int alpha = isRootLevel ? 220 : 160;
+      pen   = QPen(QColor(180, 120, 255, alpha), isRootLevel ? 2.0 : 1.0);
+      brush = QBrush(QColor(140,  80, 255, isRootLevel ? 55 : 25));
+    } else if (isRootLevel) {
+      pen   = QPen(QColor(140, 190, 255), 2.0);
+      brush = QBrush(QColor(100, 170, 255, 45));
+    } else {
+      pen   = QPen(QColor( 80, 210, 160, 180), 1.0);
+      brush = QBrush(QColor( 60, 180, 130,  25));
+    }
+
+    const QTransform wt = transform2DToQt(node.worldTransform);
+    auto* rectItem = scene->addRect(localRect, pen, brush);
+    rectItem->setTransform(wt);
+
+    if (isRootLevel || debugOverlay) {
+      const QString name = node.instanceName.empty()
+          ? QString("C%1").arg(node.characterId)
+          : QString::fromStdString(node.instanceName);
+      QString label = QString("%1\nD%2/C%3").arg(name).arg(node.placementDepth).arg(node.characterId);
+      if (debugOverlay && !node.parentChainLabel.empty())
+        label += QString("\n%1").arg(QString::fromStdString(node.parentChainLabel));
+      const QPointF sceneTL = wt.map(QPointF(localRect.left(), localRect.top()));
+      auto* textItem = scene->addSimpleText(label);
+      textItem->setPos(sceneTL.x() + 4.0, sceneTL.y() + 4.0);
+      textItem->setBrush(QBrush(
+          isHighlighted ? QColor(255, 235, 140) :
+          isRootLevel   ? QColor(225, 225, 230) :
+                          QColor(170, 230, 195)));
+    }
+
+    if (debugOverlay) {
+      const QPointF origin = wt.map(QPointF(0.0, 0.0));
+      const QPen xhair(isHighlighted ? QColor(255, 210, 64, 200)
+                                     : QColor(255, 80,  80, 200), 1.5);
+      scene->addLine(origin.x() - 5, origin.y(), origin.x() + 5, origin.y(), xhair);
+      scene->addLine(origin.x(), origin.y() - 5, origin.x(), origin.y() + 5, xhair);
+
+      // Matrix inspection label.
+      const gf::apt::Transform2D& m = node.worldTransform;
+      const QString matStr = QString("a=%1 b=%2\nc=%3 d=%4\ntx=%5 ty=%6")
+          .arg(m.a,  0,'f',3).arg(m.b,  0,'f',3)
+          .arg(m.c,  0,'f',3).arg(m.d,  0,'f',3)
+          .arg(m.tx, 0,'f',1).arg(m.ty, 0,'f',1);
+      auto* matLabel = scene->addSimpleText(matStr);
+      matLabel->setPos(origin.x() + 8.0, origin.y() - 42.0);
+      matLabel->setBrush(QBrush(isHighlighted ? QColor(255, 210, 64, 180)
+                                              : QColor(200, 200, 200, 160)));
+    }
+  }
+}
+
+void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
+                                       int highlightedPlacementIndex,
+                                       const std::vector<gf::apt::AptCharacter>* characterTable,
+                                       const QString& noFrameMsg,
+                                       bool fitToContent) {
+  if (!m_aptPreviewScene || !m_currentAptFile) return;
+
+  m_aptPreviewScene->clear();
+
+  const auto [sceneWidth, sceneHeight] = resolveAptPreviewCanvasSize(m_currentAptFile->summary);
+  const QRectF canvasRect(0.0, 0.0, sceneWidth, sceneHeight);
+  m_aptPreviewScene->setSceneRect(canvasRect.adjusted(-40.0, -40.0, 40.0, 40.0));
+
+  const QPen gridPen(QColor(58, 58, 66, 120));
+  constexpr qreal gridStep = 100.0;
+  for (qreal x = 0.0; x <= sceneWidth; x += gridStep)
+    m_aptPreviewScene->addLine(x, 0.0, x, sceneHeight, gridPen);
+  for (qreal y = 0.0; y <= sceneHeight; y += gridStep)
+    m_aptPreviewScene->addLine(0.0, y, sceneWidth, y, gridPen);
+
+  m_aptPreviewScene->addRect(canvasRect, QPen(QColor(200, 200, 210), 2.0), QBrush(QColor(36, 36, 42)));
+  m_aptPreviewScene->addLine(0.0, 0.0, 40.0, 0.0, QPen(QColor(220, 80, 80), 2.0));
+  m_aptPreviewScene->addLine(0.0, 0.0, 0.0, 40.0, QPen(QColor(80, 200, 120), 2.0));
+
+  auto* originLabel = m_aptPreviewScene->addSimpleText("Origin (0,0)");
+  originLabel->setBrush(QBrush(QColor(225, 225, 230)));
+  originLabel->setPos(6.0, 6.0);
+
+  if (!frame) {
+    const QString msg = noFrameMsg.isEmpty()
+        ? QStringLiteral("Select a frame or character to preview.")
+        : noFrameMsg;
+    auto* msgItem = m_aptPreviewScene->addSimpleText(msg);
+    msgItem->setBrush(QBrush(QColor(160, 165, 180)));
+    msgItem->setPos(24.0, sceneHeight * 0.5 - msgItem->boundingRect().height() * 0.5);
+    if (m_aptPreviewView) m_aptPreviewView->fitInView(m_aptPreviewScene->sceneRect(), Qt::KeepAspectRatio);
+    return;
+  }
+
+  const bool debugOverlay = m_aptDebugAction && m_aptDebugAction->isChecked();
+
+  gf::apt::RenderOptions opts;
+  opts.highlightRootPlacementIdx = highlightedPlacementIndex;
+  opts.maxRecursionDepth = 8;
+  opts.collectParentChain = debugOverlay;
+
+  // Use the caller-supplied character table when rendering a nested character frame,
+  // otherwise fall back to the root movie's character table.
+  const std::vector<gf::apt::AptCharacter>& table =
+      characterTable ? *characterTable : m_currentAptFile->characters;
+
+  const auto nodes = gf::apt::renderAptFrame(*m_currentAptFile, *frame, table,
+                                              gf::apt::Transform2D::identity(),
+                                              opts);
+  renderNodesToScene(nodes, highlightedPlacementIndex, debugOverlay, m_aptPreviewScene);
+
+  // Option C: if every node is a Sprite/Movie/Unknown placeholder (no leaf content),
+  // show an explanatory message so the user knows to browse individual characters.
+  // This happens when the root frame places only runtime-assembled containers (e.g.
+  // ActionScript-driven scorebugs where character 0's Frame 0 places an empty Sprite).
+  {
+    const bool allPlaceholders = !nodes.empty() && std::all_of(nodes.begin(), nodes.end(),
+        [](const gf::apt::RenderNode& n) {
+          return n.kind == gf::apt::RenderNode::Kind::Sprite
+              || n.kind == gf::apt::RenderNode::Kind::Movie
+              || n.kind == gf::apt::RenderNode::Kind::Unknown;
+        });
+
+    if (allPlaceholders) {
+      // Build a short summary of the placeholder(s) for context.
+      const gf::apt::RenderNode& first = nodes[0];
+      const std::string& iname = first.instanceName;
+      const QString hint = iname.empty()
+          ? QString("C%1").arg(first.characterId)
+          : QString::fromStdString(iname);
+      const QString msg =
+          QString("No static content in this frame.\n"
+                  "\"%1\" is a runtime-only container assembled by ActionScript.\n"
+                  "Select a character in the Characters section to preview its static frames.")
+          .arg(hint);
+      auto* msgItem = m_aptPreviewScene->addSimpleText(msg);
+      msgItem->setBrush(QBrush(QColor(160, 165, 180)));
+      // Centre it vertically in the canvas.
+      const qreal my = sceneHeight * 0.5 - msgItem->boundingRect().height() * 0.5;
+      msgItem->setPos(24.0, my);
+    }
+
+    // In debug mode, always show node count in the top-right corner.
+    if (debugOverlay) {
+      const QString diagText = nodes.empty()
+          ? QString("0 nodes — %1 placements in frame").arg(frame->placements.size())
+          : QString("%1 node%2").arg(nodes.size()).arg(nodes.size() == 1 ? "" : "s");
+      auto* diagLabel = m_aptPreviewScene->addSimpleText(diagText);
+      diagLabel->setBrush(QBrush(QColor(100, 200, 120, 200)));
+      diagLabel->setPos(sceneWidth - diagLabel->boundingRect().width() - 8.0, 8.0);
+    }
+  }
+
+  if (m_aptPreviewView) {
+    if (fitToContent) {
+      const QRectF cb = m_aptPreviewScene->itemsBoundingRect();
+      const QRectF fitRect = (cb.isValid() && cb.width() > 1.0 && cb.height() > 1.0)
+          ? cb.adjusted(-20.0, -20.0, 20.0, 20.0)
+          : m_aptPreviewScene->sceneRect();
+      m_aptPreviewView->fitInView(fitRect, Qt::KeepAspectRatio);
+    } else {
+      m_aptPreviewView->fitInView(m_aptPreviewScene->sceneRect(), Qt::KeepAspectRatio);
+    }
+  }
+}
+
+void MainWindow::setAptFrameIndex(int idx) {
+  if (!m_currentAptFile) return;
+
+  // Character-preview context: navigate within the selected character's frames.
+  if (m_aptCharPreviewIdx >= 0
+      && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+    const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)];
+    const int count = static_cast<int>(ch.frames.size());
+    if (count == 0) return;
+    idx = std::max(0, std::min(idx, count - 1));
+    m_aptCurrentFrameIndex = idx;
+    if (m_aptFrameSpin) {
+      m_aptFrameSpin->blockSignals(true);
+      m_aptFrameSpin->setValue(idx);
+      m_aptFrameSpin->blockSignals(false);
+    }
+    if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(idx > 0);
+    if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(idx + 1 < count);
+    const std::vector<gf::apt::AptCharacter>* table =
+        ch.nested_characters.empty() ? nullptr : &ch.nested_characters;
+    renderAptFrameToScene(&ch.frames[static_cast<std::size_t>(idx)], -1, table);
+    return;
+  }
+
+  // Root-movie context.
+  const int count = static_cast<int>(m_currentAptFile->frames.size());
+  if (count == 0) return;
+  idx = std::max(0, std::min(idx, count - 1));
+  m_aptCurrentFrameIndex = idx;
+  if (m_aptFrameSpin) {
+    m_aptFrameSpin->blockSignals(true);
+    m_aptFrameSpin->setValue(idx);
+    m_aptFrameSpin->blockSignals(false);
+  }
+  if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(idx > 0);
+  if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(idx + 1 < count);
+  const int hi = selectedAptPlacementIndex().value_or(-1);
+  renderAptFrameToScene(&m_currentAptFile->frames[static_cast<std::size_t>(idx)], hi);
+}
+
+void MainWindow::refreshAptPreview() {
+  if (!m_aptPreviewScene) return;
+
+  if (!m_currentAptFile || m_currentAptFile->frames.empty()) {
+    renderAptFrameToScene(nullptr, -1);
+    return;
+  }
+
+  // Helper: switch the frame-navigation controls to a new context.
+  // frameCount = total frames available; currentFrame = frame to show now.
+  auto syncNavControls = [&](int frameCount, int currentFrame, const QString& tooltip) {
+    if (m_aptFrameSpin) {
+      m_aptFrameSpin->blockSignals(true);
+      m_aptFrameSpin->setRange(0, std::max(0, frameCount - 1));
+      m_aptFrameSpin->setValue(currentFrame);
+      m_aptFrameSpin->setEnabled(frameCount > 0);
+      m_aptFrameSpin->setToolTip(tooltip);
+      m_aptFrameSpin->blockSignals(false);
+    }
+    if (m_aptFrameCountLabel)
+      m_aptFrameCountLabel->setText(QString(" / %1 ").arg(frameCount));
+    if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(currentFrame > 0);
+    if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(currentFrame + 1 < frameCount);
+  };
+
+  if (m_aptTree) {
+    QTreeWidgetItem* cur = m_aptTree->currentItem();
+    if (cur) {
+      const int nodeType  = cur->data(0, kAptRoleNodeType).toInt();
+      const int ownerKind = cur->data(0, kAptRoleOwnerKind).toInt();
+      const int ownerIdx  = cur->data(0, kAptRoleOwnerIndex).toInt();
+      const int nodeIdx   = cur->data(0, kAptRoleNodeIndex).toInt();
+
+      // ── Character node selected directly (ownerKind==0, kAptNodeCharacter) ──
+      // Enter character-preview context so the frame spinner navigates this character.
+      if (nodeType == kAptNodeCharacter && nodeIdx >= 0
+          && nodeIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+        const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(nodeIdx)];
+
+        if (ch.type == 5 || ch.type == 9) {
+          // Sprite / Movie with parseable frames.
+          if (!ch.frames.empty()) {
+            m_aptCharPreviewIdx = nodeIdx;
+            m_aptCurrentFrameIndex = 0;
+            const int fc = static_cast<int>(ch.frames.size());
+            syncNavControls(fc, 0,
+                QString("Frame index within Character %1 (0-based)").arg(nodeIdx));
+            const std::vector<gf::apt::AptCharacter>* table =
+                ch.nested_characters.empty() ? nullptr : &ch.nested_characters;
+            renderAptFrameToScene(&ch.frames[0], -1, table);
+          } else {
+            // Frameless Sprite/Movie — runtime-only container.
+            m_aptCharPreviewIdx = -1;
+            const QString name = QString::fromStdString(
+                // No easy instance name here; use export name if available.
+                [&]() -> std::string {
+                  for (const auto& ex : m_currentAptFile->exports)
+                    if (static_cast<int>(ex.character) == nodeIdx) return ex.name;
+                  return {};
+                }());
+            const QString hint = name.isEmpty()
+                ? QString("C%1").arg(nodeIdx) : name;
+            renderAptFrameToScene(nullptr, -1, nullptr,
+                QString("No static frames — \"%1\" is a runtime-only container.\n"
+                        "Its display list is assembled by ActionScript at runtime.\n"
+                        "Expand this character's children in the tree to inspect sub-sprites.")
+                .arg(hint));
+          }
+          return;
+        }
+
+        // Leaf character (Shape, Image, EditText, Button, Text, Morph).
+        // Render the character standalone at identity transform via a synthetic placement.
+        if (ch.type != 0) {
+          m_aptCharPreviewIdx = -1;
+          // Disable frame navigation — leaves have no frames.
+          syncNavControls(0, 0, QStringLiteral("No frame navigation — leaf character"));
+          gf::apt::AptFrame synthFrame;
+          synthFrame.frameitemcount = 1;
+          gf::apt::AptPlacement pl;
+          pl.character  = static_cast<std::uint32_t>(nodeIdx);
+          pl.depth      = 0;
+          // AptTransform defaults to identity (scale=1, everything else 0).
+          synthFrame.placements.push_back(std::move(pl));
+          // fitToContent=true so the view zooms to the character bounds
+          // rather than showing it tiny inside the full 1280×720 canvas.
+          renderAptFrameToScene(&synthFrame, -1, nullptr, {}, true);
+          return;
+        }
+        // type==0 (import slot): fall through to root-movie rendering.
+      }
+
+      // ── Frame or Placement node under a character (ownerKind==1) ──
+      // Sync character context and render the specified character frame.
+      if (ownerKind == 1
+          && (nodeType == kAptNodeFrame || nodeType == kAptNodePlacement)
+          && ownerIdx >= 0
+          && ownerIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+        const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(ownerIdx)];
+        const int fi = nodeIdx; // frame index stored in kAptRoleNodeIndex for both node types
+        if (fi >= 0 && fi < static_cast<int>(ch.frames.size())) {
+          m_aptCharPreviewIdx = ownerIdx;
+          m_aptCurrentFrameIndex = fi;
+          const int fc = static_cast<int>(ch.frames.size());
+          syncNavControls(fc, fi,
+              QString("Frame index within Character %1 (0-based)").arg(ownerIdx));
+          const int hiPl = (nodeType == kAptNodePlacement)
+              ? cur->data(0, kAptRolePlacementIndex).toInt() : -1;
+          const std::vector<gf::apt::AptCharacter>* table =
+              ch.nested_characters.empty() ? nullptr : &ch.nested_characters;
+          renderAptFrameToScene(&ch.frames[static_cast<std::size_t>(fi)], hiPl, table);
+          return;
+        }
+      }
+    }
+  }
+
+  // ── Root-movie context ────────────────────────────────────────────────────
+  // Clear character context and render the root movie's current frame.
+  if (m_aptCharPreviewIdx != -1) {
+    m_aptCharPreviewIdx = -1;
+    const int fc = static_cast<int>(m_currentAptFile->frames.size());
+    syncNavControls(fc, m_aptCurrentFrameIndex,
+                    QStringLiteral("Root movie frame index (0-based)"));
+  }
+
+  // A root-movie frame node in the tree overrides the spinner.
+  if (auto treeFrame = selectedAptFrameIndex()) {
+    if (*treeFrame != m_aptCurrentFrameIndex) {
+      m_aptCurrentFrameIndex = *treeFrame;
+      if (m_aptFrameSpin) {
+        m_aptFrameSpin->blockSignals(true);
+        m_aptFrameSpin->setValue(m_aptCurrentFrameIndex);
+        m_aptFrameSpin->blockSignals(false);
+      }
+      const int count = static_cast<int>(m_currentAptFile->frames.size());
+      if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(m_aptCurrentFrameIndex > 0);
+      if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(m_aptCurrentFrameIndex + 1 < count);
+    }
+  }
+
+  const int fi = std::max(0, std::min(m_aptCurrentFrameIndex,
+                                      static_cast<int>(m_currentAptFile->frames.size()) - 1));
+  const int hi = selectedAptPlacementIndex().value_or(-1);
+  renderAptFrameToScene(&m_currentAptFile->frames[static_cast<std::size_t>(fi)], hi);
+}
+
+void MainWindow::syncAptPropEditorFromItem(QTreeWidgetItem* item) {
+  if (!m_aptPropStack || !m_aptDetails) return;
+
+  m_aptUpdatingUi = true;
+  if (m_aptApplyAction) m_aptApplyAction->setEnabled(false);
+
+  if (!item || !m_currentAptFile) {
+    m_aptDetails->setPlainText(item ? item->data(0, Qt::UserRole).toString() : QString());
+    m_aptPropStack->setCurrentWidget(m_aptDetails);
+    m_aptUpdatingUi = false;
+    return;
+  }
+
+  const int nodeType = item->data(0, kAptRoleNodeType).toInt();
+  const int index = item->data(0, kAptRoleNodeIndex).toInt();
+  const int ownerKind = item->data(0, kAptRoleOwnerKind).toInt();
+  const int ownerIndex = item->data(0, kAptRoleOwnerIndex).toInt();
+  const int placementIndex = item->data(0, kAptRolePlacementIndex).toInt();
+  const auto& file = *m_currentAptFile;
+
+  switch (nodeType) {
+    case kAptNodeSummary:
+      m_aptSumWidthSpin->setValue(static_cast<int>(file.summary.screensizex));
+      m_aptSumHeightSpin->setValue(static_cast<int>(file.summary.screensizey));
+      m_aptSumFrameCountLabel->setText(QString::number(file.frames.size()));
+      m_aptSumCharCountLabel->setText(QString::number(file.characters.size()));
+      m_aptSumImportCountLabel->setText(QString::number(file.imports.size()));
+      m_aptSumExportCountLabel->setText(QString::number(file.exports.size()));
+      m_aptSumOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(file.summary.aptdataoffset), 16).toUpper()));
+      m_aptPropStack->setCurrentWidget(m_aptSummaryPage);
+      break;
+
+    case kAptNodeImport:
+      if (index >= 0 && index < static_cast<int>(file.imports.size())) {
+        const auto& im = file.imports[static_cast<std::size_t>(index)];
+        m_aptImportMovieEdit->setText(QString::fromStdString(im.movie));
+        m_aptImportNameEdit->setText(QString::fromStdString(im.name));
+        m_aptImportCharLabel->setText(QString::number(im.character));
+        m_aptImportOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(im.offset), 16).toUpper()));
+        m_aptPropStack->setCurrentWidget(m_aptImportPage);
+      } else {
+        m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
+        m_aptPropStack->setCurrentWidget(m_aptDetails);
+      }
+      break;
+
+    case kAptNodeExport:
+      if (index >= 0 && index < static_cast<int>(file.exports.size())) {
+        const auto& ex = file.exports[static_cast<std::size_t>(index)];
+        m_aptExportNameEdit->setText(QString::fromStdString(ex.name));
+        m_aptExportCharLabel->setText(QString::number(ex.character));
+        m_aptExportOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(ex.offset), 16).toUpper()));
+        m_aptPropStack->setCurrentWidget(m_aptExportPage);
+      } else {
+        m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
+        m_aptPropStack->setCurrentWidget(m_aptDetails);
+      }
+      break;
+
+    case kAptNodeCharacter:
+      if (index >= 0 && index < static_cast<int>(file.characters.size())) {
+        const auto& ch = file.characters[static_cast<std::size_t>(index)];
+        m_aptCharTypeLabel->setText(QString("%1 (%2)").arg(QString::fromStdString(gf::apt::aptCharTypeName(ch.type))).arg(ch.type));
+        m_aptCharSigLabel->setText(QString("0x%1").arg(QString::number(qulonglong(ch.signature), 16).toUpper()));
+        m_aptCharOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(ch.offset), 16).toUpper()));
+        m_aptPropStack->setCurrentWidget(m_aptCharPage);
+      } else {
+        m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
+        m_aptPropStack->setCurrentWidget(m_aptDetails);
+      }
+      break;
+
+    case kAptNodeFrame: {
+      const gf::apt::AptFrame* frame = nullptr;
+      if (ownerKind == 1) {
+        if (ownerIndex >= 0 && ownerIndex < static_cast<int>(file.characters.size())) {
+          const auto& ch = file.characters[static_cast<std::size_t>(ownerIndex)];
+          if (index >= 0 && index < static_cast<int>(ch.frames.size())) {
+            frame = &ch.frames[static_cast<std::size_t>(index)];
+          }
+        }
+      } else if (index >= 0 && index < static_cast<int>(file.frames.size())) {
+        frame = &file.frames[static_cast<std::size_t>(index)];
+      }
+
+      if (frame) {
+        m_aptFrameItemCountLabel->setText(QString("%1 (%2 placements)").arg(frame->frameitemcount).arg(frame->placements.size()));
+        m_aptFrameItemsOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(frame->items_offset), 16).toUpper()));
+        m_aptPropStack->setCurrentWidget(m_aptFramePage);
+      } else {
+        m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
+        m_aptPropStack->setCurrentWidget(m_aptDetails);
+      }
+      break;
+    }
+
+    case kAptNodePlacement: {
+      const gf::apt::AptPlacement* placement = nullptr;
+      if (ownerKind == 1) {
+        if (ownerIndex >= 0 && ownerIndex < static_cast<int>(file.characters.size())) {
+          const auto& ch = file.characters[static_cast<std::size_t>(ownerIndex)];
+          if (index >= 0 && index < static_cast<int>(ch.frames.size())) {
+            const auto& fr = ch.frames[static_cast<std::size_t>(index)];
+            if (placementIndex >= 0 && placementIndex < static_cast<int>(fr.placements.size())) {
+              placement = &fr.placements[static_cast<std::size_t>(placementIndex)];
+            }
+          }
+        }
+      } else if (index >= 0 && index < static_cast<int>(file.frames.size())) {
+        const auto& fr = file.frames[static_cast<std::size_t>(index)];
+        if (placementIndex >= 0 && placementIndex < static_cast<int>(fr.placements.size())) {
+          placement = &fr.placements[static_cast<std::size_t>(placementIndex)];
+        }
+      }
+
+      if (placement) {
+        m_aptPlacementDepthSpin->setValue(static_cast<int>(placement->depth));
+        m_aptPlacementCharSpin->setValue(static_cast<int>(placement->character));
+        m_aptPlacementNameEdit->setText(QString::fromStdString(placement->instance_name));
+        m_aptPlacementXSpin->setValue(placement->transform.x);
+        m_aptPlacementYSpin->setValue(placement->transform.y);
+        m_aptPlacementScaleXSpin->setValue(placement->transform.scale_x);
+        if (m_aptPlacementRotSkew0Spin) m_aptPlacementRotSkew0Spin->setValue(placement->transform.rotate_skew_0);
+        if (m_aptPlacementRotSkew1Spin) m_aptPlacementRotSkew1Spin->setValue(placement->transform.rotate_skew_1);
+        m_aptPlacementScaleYSpin->setValue(placement->transform.scale_y);
+        m_aptPlacementOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(placement->offset), 16).toUpper()));
+        m_aptPropStack->setCurrentWidget(m_aptPlacementPage);
+      } else {
+        m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
+        m_aptPropStack->setCurrentWidget(m_aptDetails);
+      }
+      break;
+    }
+
+    default:
+      m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
+      m_aptPropStack->setCurrentWidget(m_aptDetails);
+      break;
+  }
+
+  m_aptUpdatingUi = false;
+}
+
+void MainWindow::onAptApply() {
+  if (!m_currentAptFile || !m_aptTree) return;
+
+  auto* item = m_aptTree->currentItem();
+  if (!item) return;
+
+  const int nodeType = item->data(0, kAptRoleNodeType).toInt();
+  const int index = item->data(0, kAptRoleNodeIndex).toInt();
+  const int ownerKind = item->data(0, kAptRoleOwnerKind).toInt();
+  const int ownerIndex = item->data(0, kAptRoleOwnerIndex).toInt();
+  const int placementIndex = item->data(0, kAptRolePlacementIndex).toInt();
+
+  auto& file = *m_currentAptFile;
+  bool changed = false;
+
+  switch (nodeType) {
+    case kAptNodeSummary: {
+      const auto newW = static_cast<std::uint32_t>(m_aptSumWidthSpin->value());
+      const auto newH = static_cast<std::uint32_t>(m_aptSumHeightSpin->value());
+      changed = (file.summary.screensizex != newW) || (file.summary.screensizey != newH);
+      file.summary.screensizex = newW;
+      file.summary.screensizey = newH;
+
+      QTreeWidgetItem* summaryNode = item;
+      while (summaryNode && summaryNode->data(0, kAptRoleNodeType).toInt() != kAptNodeSummary) {
+        summaryNode = summaryNode->parent();
+      }
+      if (summaryNode) {
+        summaryNode->setText(1, QString("%1x%2").arg(newW).arg(newH));
+        summaryNode->setData(0, Qt::UserRole,
+                      QString("Screen Size: %1 x %2\nFrames: %3\nCharacters: %4\nImports: %5\nExports: %6\nMovie Data Offset: 0x%7")
+                          .arg(newW)
+                          .arg(newH)
+                          .arg(file.frames.size())
+                          .arg(file.characters.size())
+                          .arg(file.imports.size())
+                          .arg(file.exports.size())
+                          .arg(QString::number(qulonglong(file.summary.aptdataoffset), 16).toUpper()));
+      }
+      break;
+    }
+
+    case kAptNodeImport:
+      if (index >= 0 && index < static_cast<int>(file.imports.size())) {
+        auto& im = file.imports[static_cast<std::size_t>(index)];
+        const QString movie = m_aptImportMovieEdit->text().trimmed();
+        const QString name = m_aptImportNameEdit->text().trimmed();
+        changed = (QString::fromStdString(im.movie) != movie) || (QString::fromStdString(im.name) != name);
+        im.movie = movie.toStdString();
+        im.name = name.toStdString();
+        item->setText(0, QString("%1: %2 :: %3").arg(index).arg(movie.isEmpty() ? "(movie?)" : movie, name.isEmpty() ? "(name?)" : name));
+        item->setData(0, Qt::UserRole,
+                      QString("Type: Import\nIndex: %1\nMovie: %2\nName: %3\nCharacter: %4\nOffset: 0x%5")
+                          .arg(index)
+                          .arg(movie.isEmpty() ? "(empty)" : movie)
+                          .arg(name.isEmpty() ? "(empty)" : name)
+                          .arg(im.character)
+                          .arg(QString::number(qulonglong(im.offset), 16).toUpper()));
+      }
+      break;
+
+    case kAptNodeExport:
+      if (index >= 0 && index < static_cast<int>(file.exports.size())) {
+        auto& ex = file.exports[static_cast<std::size_t>(index)];
+        const QString name = m_aptExportNameEdit->text().trimmed();
+        changed = (QString::fromStdString(ex.name) != name);
+        ex.name = name.toStdString();
+        item->setText(0, QString("%1: %2").arg(index).arg(name.isEmpty() ? "(empty)" : name));
+        item->setData(0, Qt::UserRole,
+                      QString("Type: Export\nIndex: %1\nName: %2\nCharacter: %3\nOffset: 0x%4")
+                          .arg(index)
+                          .arg(name.isEmpty() ? "(empty)" : name)
+                          .arg(ex.character)
+                          .arg(QString::number(qulonglong(ex.offset), 16).toUpper()));
+      }
+      break;
+
+    case kAptNodePlacement: {
+      gf::apt::AptPlacement* placement = nullptr;
+      QString ownerLabel = "Root Movie";
+
+      if (ownerKind == 1) {
+        if (ownerIndex >= 0 && ownerIndex < static_cast<int>(file.characters.size())) {
+          auto& ch = file.characters[static_cast<std::size_t>(ownerIndex)];
+          if (index >= 0 && index < static_cast<int>(ch.frames.size())) {
+            auto& fr = ch.frames[static_cast<std::size_t>(index)];
+            if (placementIndex >= 0 && placementIndex < static_cast<int>(fr.placements.size())) {
+              placement = &fr.placements[static_cast<std::size_t>(placementIndex)];
+              ownerLabel = QString("Character %1").arg(ownerIndex);
+            }
+          }
+        }
+      } else if (index >= 0 && index < static_cast<int>(file.frames.size())) {
+        auto& fr = file.frames[static_cast<std::size_t>(index)];
+        if (placementIndex >= 0 && placementIndex < static_cast<int>(fr.placements.size())) {
+          placement = &fr.placements[static_cast<std::size_t>(placementIndex)];
+        }
+      }
+
+      if (placement) {
+        const std::uint32_t newDepth     = static_cast<std::uint32_t>(m_aptPlacementDepthSpin->value());
+        const std::uint32_t newCharacter = static_cast<std::uint32_t>(m_aptPlacementCharSpin->value());
+        const QString newName            = m_aptPlacementNameEdit->text().trimmed();
+        const double newX       = m_aptPlacementXSpin->value();
+        const double newY       = m_aptPlacementYSpin->value();
+        const double newScaleX  = m_aptPlacementScaleXSpin->value();
+        const double newScaleY  = m_aptPlacementScaleYSpin->value();
+        const double newRSkew0  = m_aptPlacementRotSkew0Spin ? m_aptPlacementRotSkew0Spin->value() : placement->transform.rotate_skew_0;
+        const double newRSkew1  = m_aptPlacementRotSkew1Spin ? m_aptPlacementRotSkew1Spin->value() : placement->transform.rotate_skew_1;
+
+        changed = placement->depth     != newDepth     ||
+                  placement->character != newCharacter  ||
+                  QString::fromStdString(placement->instance_name) != newName ||
+                  placement->transform.x             != newX      ||
+                  placement->transform.y             != newY      ||
+                  placement->transform.scale_x       != newScaleX ||
+                  placement->transform.scale_y       != newScaleY ||
+                  placement->transform.rotate_skew_0 != newRSkew0 ||
+                  placement->transform.rotate_skew_1 != newRSkew1;
+
+        placement->depth     = newDepth;
+        placement->character = newCharacter;
+        placement->instance_name = newName.toStdString();
+        placement->transform.x             = newX;
+        placement->transform.y             = newY;
+        placement->transform.scale_x       = newScaleX;
+        placement->transform.scale_y       = newScaleY;
+        placement->transform.rotate_skew_0 = newRSkew0;
+        placement->transform.rotate_skew_1 = newRSkew1;
+
+        const QString label = placement->instance_name.empty()
+            ? QString("Placement %1").arg(placementIndex)
+            : QString("Placement %1 — %2").arg(placementIndex).arg(QString::fromStdString(placement->instance_name));
+        item->setText(0, label);
+        item->setText(1, aptPlacementValueText(*placement));
+        item->setData(0, Qt::UserRole, aptPlacementDetailText(*placement, ownerLabel, index, placementIndex));
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  if (!changed) {
+    if (m_aptApplyAction) m_aptApplyAction->setEnabled(false);
+    return;
+  }
+
+  m_aptDirty = true;
+  setDirty(true);
+  if (m_aptApplyAction) m_aptApplyAction->setEnabled(false);
+  syncAptPropEditorFromItem(item);
+  refreshAptPreview();
+  statusBar()->showMessage("APT changes applied to in-memory model.", 3000);
+}
+
+void MainWindow::onAptSave() {
+  if (!m_currentAptFile) return;
+
+  const auto aptBytes = m_currentAptFile->rebuild_binary();
+  if (aptBytes.empty()) {
+    statusBar()->showMessage("APT rebuild produced empty output — save aborted.", 5000);
+    return;
+  }
+  const std::span<const std::byte> byteSpan(
+      reinterpret_cast<const std::byte*>(aptBytes.data()), aptBytes.size());
+
+  if (!m_aptIsEmbedded) {
+    // Standalone APT: write directly to the original file with backup.
+    if (m_textAptPath.isEmpty()) {
+      statusBar()->showMessage("No APT file path — use Export APT... instead.", 4000);
+      return;
+    }
+    gf::core::SafeWriteOptions opts;
+    opts.make_backup = true;
+    const auto res = gf::core::safe_write_bytes(
+        std::filesystem::path(m_textAptPath.toStdString()), byteSpan, opts);
+    if (!res.ok) {
+      QMessageBox::critical(this, "Save APT Failed", QString::fromStdString(res.message));
+      return;
+    }
+    const QString backupInfo = res.backup_path
+        ? QString(" (backup: %1)").arg(QString::fromStdString(res.backup_path->string()))
+        : QString();
+    statusBar()->showMessage(
+        QString("APT saved: %1%2").arg(QFileInfo(m_textAptPath).fileName()).arg(backupInfo), 5000);
+    m_aptDirty = false;
+    return;
+  }
+
+  // Embedded APT — write the patched entry back to the AST container.
+  if (m_aptSaveContextIsNested) {
+    QMessageBox::information(this, "Save to Nested Container",
+        "This APT lives inside a nested .ast container.\n"
+        "Direct save into nested containers is not yet supported.\n\n"
+        "Use 'Export APT...' to save the patched bytes to a file,\n"
+        "then replace the entry manually via the AST editor.");
+    return;
+  }
+
+  if (m_aptSaveAptEntryIdx < 0 || m_aptSaveOuterPath.isEmpty()) {
+    statusBar()->showMessage("No save context — reload the APT and try again.", 4000);
+    return;
+  }
+
+  // Reuse m_liveAstEditor if it already covers this container; otherwise load.
+  if (!m_liveAstEditor || m_liveAstPath != m_aptSaveOuterPath) {
+    std::string loadErr;
+    auto editor = gf::core::AstContainerEditor::load(
+        m_aptSaveOuterPath.toStdString(), &loadErr);
+    if (!editor) {
+      QMessageBox::critical(this, "Save APT Failed",
+          QString("Cannot open container:\n%1").arg(QString::fromStdString(loadErr)));
+      return;
+    }
+    m_liveAstEditor = std::make_unique<gf::core::AstContainerEditor>(std::move(*editor));
+    m_liveAstPath = m_aptSaveOuterPath;
+  }
+
+  const std::span<const std::uint8_t> aptSpan(aptBytes.data(), aptBytes.size());
+  std::string replErr;
+  if (!m_liveAstEditor->replaceEntryBytes(
+          static_cast<std::uint32_t>(m_aptSaveAptEntryIdx), aptSpan,
+          gf::core::AstContainerEditor::ReplaceMode::PreserveZlibIfPresent, &replErr)) {
+    QMessageBox::critical(this, "Save APT Failed",
+        QString("Failed to replace APT entry #%1:\n%2")
+            .arg(m_aptSaveAptEntryIdx).arg(QString::fromStdString(replErr)));
+    return;
+  }
+
+  std::string writeErr;
+  if (!m_liveAstEditor->writeInPlace(&writeErr, /*makeBackup=*/true, /*maxBytes=*/0)) {
+    QMessageBox::critical(this, "Save APT Failed",
+        QString("Failed to write container:\n%1").arg(QString::fromStdString(writeErr)));
+    return;
+  }
+
+  m_aptDirty = false;
+  setDirty(false);
+  statusBar()->showMessage(
+      QString("APT entry #%1 saved to %2")
+          .arg(m_aptSaveAptEntryIdx)
+          .arg(QFileInfo(m_aptSaveOuterPath).fileName()),
+      5000);
+}
+
+void MainWindow::onAptExport() {
+  if (!m_currentAptFile) return;
+
+  const auto aptBytes = m_currentAptFile->rebuild_binary();
+  if (aptBytes.empty()) {
+    statusBar()->showMessage("APT rebuild produced empty output.", 4000);
+    return;
+  }
+
+  const QString defaultName = m_textAptPath.isEmpty()
+      ? "export.apt"
+      : QFileInfo(m_textAptPath).fileName();
+  const QString outPath = QFileDialog::getSaveFileName(
+      this, "Export APT Bytes", defaultName,
+      "APT files (*.apt *.apt1);;All files (*)");
+  if (outPath.isEmpty()) return;
+
+  gf::core::SafeWriteOptions opts;
+  opts.make_backup = false;
+  const auto res = gf::core::safe_write_bytes(
+      std::filesystem::path(outPath.toStdString()),
+      std::span<const std::byte>(reinterpret_cast<const std::byte*>(aptBytes.data()), aptBytes.size()),
+      opts);
+  if (!res.ok) {
+    QMessageBox::critical(this, "Export APT Failed", QString::fromStdString(res.message));
+    return;
+  }
+  statusBar()->showMessage(QString("APT exported to %1").arg(outPath), 4000);
+}
+
+
+void MainWindow::showViewerForItem(QTreeWidgetItem* item) {
+  if (!m_viewerLabel || !item) return;
+
+  // Default: leave APT XML mode unless we explicitly enter it for an APT selection.
+  m_textAptXmlMode = false;
+
+  // Switching selection within an archive should exit external text mode.
+  // External text mode is only for standalone text files opened via the Text tab.
+  if (item->data(0, Qt::UserRole + 3).toBool()) {
+    m_textExternalMode = false;
+  }
+
+  const QString path = item->data(0, Qt::UserRole).toString();
+  if (path.isEmpty()) {
+    m_viewerLabel->setText(QString("%1").arg(item->text(0)));
+    if (m_viewTabs) m_viewTabs->setVisible(false);
+    return;
+  }
+
+  const bool isEmbedded = item->data(0, Qt::UserRole + 3).toBool();
+  const quint64 baseOffset = item->data(0, Qt::UserRole + 1).toULongLong();
+  const quint64 maxReadable = item->data(0, Qt::UserRole + 2).toULongLong();
+  const quint32 astFlags = static_cast<quint32>(item->data(0, Qt::UserRole + 4).toULongLong());
+
+  QFileInfo fi(path);
+  const QString shownName = fi.fileName().isEmpty() ? path : fi.fileName();
+
+  // If this is an APT, generate XML into the Text tab for in-tool editing.
+  // Standalone: use files directly.
+  // APT: show converter-style XML in the Text tab.
+  // NOTE: for embedded entries, `path` is the *container* (.ast) path, so we cannot rely on QFileInfo(path).suffix().
+  const QString itemType = item ? item->text(1) : QString();
+  const bool isAptItem = (itemType.compare("APT", Qt::CaseInsensitive) == 0) ||
+                         (itemType.compare("APT1", Qt::CaseInsensitive) == 0) ||
+                         (fi.suffix().compare("apt", Qt::CaseInsensitive) == 0) ||
+                         (fi.suffix().compare("apt1", Qt::CaseInsensitive) == 0);
+
+  // Use the unified loadAptForItem helper for all APT loading (embedded + standalone).
+  if (isAptItem) {
+    if (m_viewTabs) m_viewTabs->setVisible(true);
+
+    QString aptErr;
+    const bool aptOk = loadAptForItem(item, &aptErr);
+
+    if (!aptOk) {
+      // Surface the failure in the status bar AND the viewer label so it's never silent.
+      statusBar()->showMessage(QString("APT load failed: %1").arg(aptErr), 7000);
+      m_viewerLabel->setText(
+          QString("APT: %1\n\nLoad failed:\n%2").arg(shownName, aptErr));
+      // Switch to APT tab so the user sees any parse error placed in m_aptDetails.
+      if (m_viewTabs && m_aptTab) {
+        const int aptTabIdx = m_viewTabs->indexOf(m_aptTab);
+        if (aptTabIdx >= 0) m_viewTabs->setCurrentIndex(aptTabIdx);
+      }
+      return;
+    }
+
+    // loadAptForItem set m_textAptPath / m_textConstPath and switched to the APT tab.
+    m_textAptXmlMode = true;
+
+    // Generate XML for the Text tab.
+    std::string xmlErr;
+    const auto xmlOpt = gf::apt::apt_to_xml_string(
+        m_textAptPath.toStdString(), m_textConstPath.toStdString(), &xmlErr);
+
+    QString xmlText;
+    if (xmlOpt) {
+      xmlText = QString::fromStdString(*xmlOpt);
+    } else {
+      std::string sumErr;
+      const auto fileFallbackOpt = gf::apt::read_apt_file(
+          m_textAptPath.toStdString(), m_textConstPath.toStdString(), &sumErr);
+      if (fileFallbackOpt) {
+        xmlText = aptSummaryToXmlFallback(*fileFallbackOpt,
+                                          QFileInfo(m_textAptPath).fileName(),
+                                          QFileInfo(m_textConstPath).fileName());
+      } else {
+        xmlText = QString("<error>%1</error>")
+                      .arg(QString::fromStdString(xmlErr.empty() ? sumErr : xmlErr));
+      }
+    }
+
+    if (m_textView) {
+      m_textView->setPlainText(xmlText);
+      m_textView->document()->setModified(false);
+      m_textAptXmlCached = m_textView->toPlainText();
+      m_textView->setReadOnly(true);
+    }
+    if (m_textEditAction) {
+      m_textEditAction->setEnabled(true);
+      m_textEditAction->setChecked(false);
+      m_textEditAction->setToolTip("Edit the generated APT XML (in-memory)");
+    }
+    if (m_textApplyAction) m_textApplyAction->setEnabled(false);
+
+    m_viewerLabel->setText(
+        QString("APT: %1\nCONST: %2\n\nText tab contains generated XML (Edit to modify; Apply stores in-memory only).")
+            .arg(QFileInfo(m_textAptPath).fileName(),
+                 QFileInfo(m_textConstPath).fileName()));
+    return;
+  }
+
+
+  // Read preview bytes.
+  // For embedded entries, prefer to show the *payload* (inflated zlib) like GridironForge v0.2.x.
+  constexpr quint64 kPreviewMax = 4096;
+  constexpr quint64 kMaxStoredRead = 2ull * 1024ull * 1024ull; // safety cap for zlib preview
+
+  const quint64 wantStored = std::min<quint64>(maxReadable ? maxReadable : kPreviewMax, kMaxStoredRead);
+  QByteArray stored;
+  stored.resize(static_cast<int>(std::min<quint64>(wantStored, std::numeric_limits<int>::max())));
+
+  QByteArray view; // what we actually render
+  QString viewNote = "Stored";
+
+  std::ifstream f(path.toStdString(), std::ios::binary);
+  if (!f) {
+    m_viewerLabel->setText(QString("File selected: %1\n\n%2\n\n(Failed to open)")
+                           .arg(shownName, fi.absoluteFilePath()));
+    if (m_viewTabs) m_viewTabs->setVisible(false);
+    return;
+  }
+  bool usedLiveEditorBytes = false;
+  if (isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
+    const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
+    auto storedOpt = m_liveAstEditor->getEntryStoredBytes(static_cast<std::uint32_t>(entryIndexQ));
+    if (storedOpt.has_value()) {
+      stored = QByteArray(reinterpret_cast<const char*>(storedOpt->data()), int(std::min<std::size_t>(storedOpt->size(), static_cast<std::size_t>(std::numeric_limits<int>::max()))));
+      usedLiveEditorBytes = true;
+    }
+  }
+  if (!usedLiveEditorBytes) {
+    if (isEmbedded) {
+      f.seekg(static_cast<std::streamoff>(baseOffset), std::ios::beg);
+    }
+    f.read(stored.data(), static_cast<std::streamsize>(stored.size()));
+    const std::streamsize got = f.gcount();
+    if (got < 0) {
+      if (m_viewTabs) m_viewTabs->setVisible(false);
+      return;
+    }
+    stored.truncate(static_cast<int>(got));
+  }
+  const std::streamsize got = static_cast<std::streamsize>(stored.size());
+
+  // Default view is stored bytes (truncated).
+  view = stored.left(static_cast<int>(std::min<quint64>(kPreviewMax, static_cast<quint64>(stored.size()))));
+
+  auto looksZlib = [](const QByteArray& b) -> bool {
+    if (b.size() < 2) return false;
+    const unsigned char b0 = static_cast<unsigned char>(b[0]);
+    const unsigned char b1 = static_cast<unsigned char>(b[1]);
+    return (b0 == 0x78) && (b1 == 0x01 || b1 == 0x9C || b1 == 0xDA);
+  };
+
+  const QString type = item->text(1);
+  if (type == "ZLIB" || looksZlib(stored)) {
+    std::vector<std::uint8_t> zIn(static_cast<std::size_t>(stored.size()));
+    if (!stored.isEmpty()) {
+      std::memcpy(zIn.data(), stored.constData(), static_cast<std::size_t>(stored.size()));
+    }
+    const auto inflated = gf::core::AstArchive::inflateZlibPreview(zIn, static_cast<std::size_t>(kPreviewMax));
+    if (!inflated.empty()) {
+      view = QByteArray(reinterpret_cast<const char*>(inflated.data()), static_cast<int>(inflated.size()));
+      viewNote = "Inflated (zlib preview)";
+    }
+  }
+
+  const QString where = isEmbedded ? QString("embedded @ 0x%1").arg(baseOffset, 0, 16) : QString("file");
+  m_viewerLabel->setText(QString("Selected: %1 (%2)\n%3\n%4")
+                         .arg(item->text(0), type, fi.absoluteFilePath(), where + "\nView: " + viewNote));
+
+  if (m_viewTabs) m_viewTabs->setVisible(true);
+
+  // --- Hex tab (always available) ---
+  if (m_hexView) {
+    m_hexView->setPlainText(formatHexPreview(view, 0));
+  }
+
+  // --- Text tab (auto if printable) ---
+  auto isMostlyPrintable = [](const QByteArray& b) -> bool {
+    if (b.isEmpty()) return false;
+    int printable = 0;
+    int nonPrintable = 0;
+    for (int i = 0; i < b.size(); ++i) {
+      const unsigned char c = static_cast<unsigned char>(b[i]);
+      if (c == 0) return false; // likely binary
+      if (c == '\n' || c == '\r' || c == '\t') { printable++; continue; }
+      if (c >= 32 && c <= 126) printable++; else nonPrintable++;
+    }
+    const int total = printable + nonPrintable;
+    if (total == 0) return false;
+    return (printable * 100) / total >= 85;
+  };
+
+  bool hasText = false;
+auto decodeTextCandidate = [&](const QByteArray& bytes) -> std::optional<QString> {
+  if (bytes.isEmpty()) return std::nullopt;
+
+  // UTF-8 BOM
+  int off = 0;
+  if (bytes.size() >= 3 &&
+      static_cast<unsigned char>(bytes[0]) == 0xEF &&
+      static_cast<unsigned char>(bytes[1]) == 0xBB &&
+      static_cast<unsigned char>(bytes[2]) == 0xBF) {
+    off = 3;
+  }
+
+  // UTF-16LE BOM
+  if (bytes.size() >= 2 &&
+      static_cast<unsigned char>(bytes[0]) == 0xFF &&
+      static_cast<unsigned char>(bytes[1]) == 0xFE) {
+    // Interpret as UTF-16LE (best-effort, truncated to even length).
+    const int n = (bytes.size() - 2) & ~1;
+    const auto* u16 = reinterpret_cast<const ushort*>(bytes.constData() + 2);
+    return QString::fromUtf16(u16, n / 2);
+  }
+
+  // Heuristic: lots of zeros in odd/even bytes => likely UTF-16LE without BOM.
+  {
+    const int check = std::min<int>(bytes.size(), 64);
+    int zerosOdd = 0, zerosEven = 0;
+    for (int i = 0; i < check; ++i) {
+      if (bytes[i] == 0) {
+        if (i & 1) zerosOdd++; else zerosEven++;
+      }
+    }
+    if (zerosOdd >= 8 && zerosOdd > zerosEven) {
+      const int n = bytes.size() & ~1;
+      const auto* u16 = reinterpret_cast<const ushort*>(bytes.constData());
+      return QString::fromUtf16(u16, n / 2);
+    }
+  }
+
+  // UTF-8 / ASCII
+  if (!isMostlyPrintable(bytes.mid(off))) return std::nullopt;
+  return QString::fromUtf8(bytes.constData() + off, bytes.size() - off);
+};
+
+if (m_textView) {
+  // If this is an embedded entry and we're in editing mode, prefer loading the *full inflated bytes*
+  // instead of the 4 KiB preview. Editing a truncated preview is unsafe and feels like a viewer.
+  QByteArray textSource = view;
+  if (isEmbedded && editingEnabled()) {
+    const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
+    const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
+
+    std::string err;
+    gf::core::AstContainerEditor* edPtr = nullptr;
+    std::optional<gf::core::AstContainerEditor> edLocal;
+    if (m_liveAstEditor && m_liveAstPath == path) {
+      edPtr = m_liveAstEditor.get();
+    } else {
+      edLocal = gf::core::AstContainerEditor::load(path.toStdString(), &err);
+      if (edLocal.has_value()) edPtr = &*edLocal;
+    }
+    if (edPtr) {
+      auto fullOpt = edPtr->getEntryInflatedBytes(entryIndex, &err);
+      if (fullOpt.has_value() && !fullOpt->empty()) {
+        textSource = QByteArray(reinterpret_cast<const char*>(fullOpt->data()), int(fullOpt->size()));
+        viewNote = "Inflated (full)";
+      }
+    }
+  }
+
+  auto decoded = decodeTextCandidate(textSource);
+  if (!decoded) {
+    // Fallback: try the stored preview (covers some BOM/whitespace cases).
+    decoded = decodeTextCandidate(stored);
+  }
+
+  if (decoded) {
+    m_textView->setPlainText(*decoded);
+    if (m_textView->document()) m_textView->document()->setModified(false);
+    hasText = true;
+  } else {
+    m_textView->setPlainText("(Not detected as plain text)");
+    if (m_textView->document()) m_textView->document()->setModified(false);
+  }
+
+  // Allow in-place edits for embedded entries that decode as text, and for external text editor mode.
+  {
+    const bool canEditEmbedded = isEmbedded && hasText && m_textForceEdit;
+    const bool canEdit = editingEnabled() && (m_textExternalMode || canEditEmbedded);
+
+    // Enable the Edit toggle only for embedded entries that look like plain text.
+    if (m_textEditAction) {
+      const bool canToggle = editingEnabled() && isEmbedded && hasText;
+      m_textEditAction->setEnabled(canToggle);
+      if (!canToggle) {
+        m_textEditAction->setChecked(false);
+        m_textForceEdit = false;
+      }
+    }
+
+    m_textView->setReadOnly(!canEdit);
+
+    if (m_textApplyAction) {
+      const bool modified = m_textView->document() ? m_textView->document()->isModified() : false;
+      m_textApplyAction->setEnabled(canEdit && modified);
+    }
+    if (m_statusDirtyLabel && m_textView->document()) {
+      m_statusDirtyLabel->setText(m_textView->document()->isModified() ? "Dirty" : "");
+    }
+  }
+}
+
+  // --- RSF tab ---
+  bool hasRsf = false;
+  if (m_rsfTab && m_rsfMaterialsTable && m_rsfParamsTable) {
+    auto clearRsfUi = [this]() {
+      if (m_rsfNameValue) m_rsfNameValue->setText({});
+      if (m_rsfModelCountValue) m_rsfModelCountValue->setText("0");
+      if (m_rsfMaterialCountValue) m_rsfMaterialCountValue->setText("0");
+      if (m_rsfTextureCountValue) m_rsfTextureCountValue->setText("0");
+      m_rsfMaterialsTable->setRowCount(0);
+      m_rsfParamsTable->setRowCount(0);
+      m_rsfCurrentDoc.reset();
+      m_rsfOriginalBytes.clear();
+      m_rsfSourcePath.clear();
+      m_rsfSourceEmbedded = false;
+      m_rsfSourceEntryIndex = 0;
+      if (m_rsfEditAction) { m_rsfEditAction->setEnabled(false); m_rsfEditAction->setChecked(true); }
+      setRsfDirty(false);
+    };
+    clearRsfUi();
+
+    QByteArray rsfBytes = stored;
+    const bool storedLooksBinaryRsf = isBinaryRsfBytes(stored);
+    const bool storedLooksXmlRsf = isXmlLikeBytes(stored);
+    if (isEmbedded) {
+      const quint64 absOffset = item->data(0, Qt::UserRole + 1).toULongLong();
+      const quint64 compSize = item->data(0, Qt::UserRole + 2).toULongLong();
+      QByteArray rawEntryBytes;
+      if (!path.isEmpty() && compSize > 0) {
+        auto raw = read_file_range(path, static_cast<std::uint64_t>(absOffset), static_cast<std::uint64_t>(compSize));
+        if (!raw.empty()) {
+          rawEntryBytes = QByteArray(reinterpret_cast<const char*>(raw.data()), static_cast<int>(raw.size()));
+        }
+      }
+      QByteArray inflatedBytes;
+      if (!rawEntryBytes.isEmpty() && looksZlib(rawEntryBytes)) {
+        std::vector<std::uint8_t> zIn(static_cast<std::size_t>(rawEntryBytes.size()));
+        std::memcpy(zIn.data(), rawEntryBytes.constData(), static_cast<std::size_t>(rawEntryBytes.size()));
+        const auto inflated = gf::core::AstArchive::inflateZlibPreview(zIn, 8u * 1024u * 1024u);
+        if (!inflated.empty()) {
+          inflatedBytes = QByteArray(reinterpret_cast<const char*>(inflated.data()), static_cast<int>(inflated.size()));
+        }
+      }
+
+      if (storedLooksBinaryRsf) rsfBytes = stored;
+      else if (isBinaryRsfBytes(rawEntryBytes)) rsfBytes = rawEntryBytes;
+      else if (isBinaryRsfBytes(inflatedBytes)) rsfBytes = inflatedBytes;
+      else if (storedLooksXmlRsf) rsfBytes = stored;
+      else if (isXmlLikeBytes(rawEntryBytes)) rsfBytes = rawEntryBytes;
+      else if (isXmlLikeBytes(inflatedBytes)) rsfBytes = inflatedBytes;
+      else if (!rawEntryBytes.isEmpty()) rsfBytes = rawEntryBytes;
+      else if (!inflatedBytes.isEmpty()) rsfBytes = inflatedBytes;
+    }
+
+    auto setRsfMessage = [this](const QString& msg) {
+      m_rsfMaterialsTable->setRowCount(1);
+      m_rsfMaterialsTable->setItem(0, 0, new QTableWidgetItem(msg));
+      for (int c = 1; c < m_rsfMaterialsTable->columnCount(); ++c) {
+        m_rsfMaterialsTable->setItem(0, c, new QTableWidgetItem(QString()));
+      }
+    };
+
+    auto tryInflateForRsf = [&](const QByteArray& src, std::size_t outCap = 8u * 1024u * 1024u) -> QByteArray {
+      if (src.isEmpty()) return {};
+      std::vector<std::uint8_t> zIn(static_cast<std::size_t>(src.size()));
+      std::memcpy(zIn.data(), src.constData(), static_cast<std::size_t>(src.size()));
+      const auto inflated = gf::core::AstArchive::inflateZlibPreview(zIn, outCap);
+      if (inflated.empty()) return {};
+      return QByteArray(reinterpret_cast<const char*>(inflated.data()), static_cast<int>(inflated.size()));
+    };
+
+    if (!isBinaryRsfBytes(rsfBytes) && !isXmlLikeBytes(rsfBytes)) {
+      if (looksZlib(rsfBytes)) {
+        const QByteArray inflated = tryInflateForRsf(rsfBytes);
+        if (!inflated.isEmpty()) rsfBytes = inflated;
+      } else if (looksZlib(stored)) {
+        const QByteArray inflated = tryInflateForRsf(stored);
+        if (!inflated.isEmpty()) rsfBytes = inflated;
+      }
+    }
+
+    const bool rsfByExt = fi.suffix().compare("rsf", Qt::CaseInsensitive) == 0 || type.compare("RSF", Qt::CaseInsensitive) == 0;
+    const bool rsfByHeader = isBinaryRsfBytes(rsfBytes);
+    const bool rsfByXml = isXmlLikeBytes(rsfBytes);
+
+    if (rsfByExt || rsfByHeader || rsfByXml) {
+      m_viewTabs->setCurrentWidget(m_rsfTab);
+
+      if (rsfByHeader) {
+        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(rsfBytes.size()));
+        if (!rsfBytes.isEmpty()) {
+          std::memcpy(bytes.data(), rsfBytes.constData(), static_cast<std::size_t>(rsfBytes.size()));
+        }
+
+        if (auto docOpt = gf::models::rsf::parse(std::span<const std::uint8_t>(bytes.data(), bytes.size())); docOpt.has_value()) {
+          m_rsfCurrentDoc = docOpt.value();
+          m_rsfOriginalBytes = rsfBytes;
+          m_rsfSourcePath = path;
+          m_rsfSourceEmbedded = isEmbedded;
+          m_rsfSourceEntryIndex = static_cast<std::uint32_t>(item->data(0, Qt::UserRole + 6).toULongLong());
+          if (m_rsfNameValue) {
+            QString nm = rsfInfoNameFromBytes(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+            if (nm.isEmpty()) nm = fi.fileName();
+            m_rsfNameValue->setText(nm);
+          }
+          if (m_rsfModelCountValue) m_rsfModelCountValue->setText(QString::number(rsfGeomCountFromBytes(std::span<const std::uint8_t>(bytes.data(), bytes.size()))));
+          if (m_rsfMaterialCountValue) m_rsfMaterialCountValue->setText(QString::number(int(m_rsfCurrentDoc->materials.size())));
+          if (m_rsfTextureCountValue) m_rsfTextureCountValue->setText(QString::number(int(m_rsfCurrentDoc->textures.size())));
+          if (m_rsfEditAction) { m_rsfEditAction->setEnabled(false); m_rsfEditAction->setChecked(true); }
+          refreshRsfMaterialsTable();
+          if (!m_rsfCurrentDoc->materials.empty()) refreshRsfParamsTable(0); else m_rsfParamsTable->setRowCount(0);
+          setRsfDirty(false);
+          hasRsf = true;
+        } else {
+          if (m_rsfNameValue) m_rsfNameValue->setText(fi.fileName());
+          setRsfMessage("(RSF parse failed)");
+          hasRsf = true;
+        }
+      } else if (rsfByXml) {
+        if (m_rsfNameValue) m_rsfNameValue->setText(fi.fileName());
+        setRsfMessage("(XML RSF / state file)");
+        hasRsf = true;
+      }
+    } else {
+      setRsfMessage("(Not an RSF)");
+    }
+  }
+
+  // --- Texture tab (DDS / EA-wrapped DDS (P3R) preview) ---
+  bool hasTexture = false;
+  if (m_imageView) {
+      m_imageView->setPixmap(QPixmap());
+
+    const QString type = item->text(1).trimmed();
+
+    // For textures we often need more than the 2MB "stored" cap above.
+    // Read the full stored payload (capped) and inflate if needed.
+    auto load_full_payload = [&]() -> std::vector<std::uint8_t> {
+      constexpr std::uint64_t kMaxStored = 64ull * 1024ull * 1024ull;
+      constexpr std::uint64_t kMaxInflated = 128ull * 1024ull * 1024ull;
+
+      // First prefer any pending preview payload stored directly on the tree item.
+      // This guarantees immediate preview updates for unsaved Replace Texture / Replace File edits.
+      if (isEmbedded) {
+        const QVariant previewVar = item->data(0, Qt::UserRole + 31);
+        if (previewVar.isValid()) {
+          const QByteArray preview = previewVar.toByteArray();
+          if (!preview.isEmpty()) {
+            std::vector<std::uint8_t> bytes(static_cast<std::size_t>(preview.size()));
+            std::memcpy(bytes.data(), preview.constData(), static_cast<std::size_t>(preview.size()));
+            return bytes;
+          }
+        }
+
+        const QVariant pendingVar = item->data(0, Qt::UserRole + 30);
+        if (pendingVar.isValid()) {
+          const QByteArray pending = pendingVar.toByteArray();
+          if (!pending.isEmpty()) {
+            std::vector<std::uint8_t> bytes(static_cast<std::size_t>(pending.size()));
+            std::memcpy(bytes.data(), pending.constData(), static_cast<std::size_t>(pending.size()));
+            return bytes;
+          }
+        }
+      }
+
+      // Prefer the live in-memory AST editor for embedded entries so preview reflects
+      // unsaved Replace Texture / Replace File changes immediately.
+      if (isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
+        const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
+        const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
+
+        std::string liveErr;
+        if (auto fullOpt = m_liveAstEditor->getEntryInflatedBytes(entryIndex, &liveErr); fullOpt.has_value() && !fullOpt->empty()) {
+          auto full = std::move(*fullOpt);
+          if (full.size() > kMaxInflated) {
+            full.resize(static_cast<std::size_t>(kMaxInflated));
+          }
+          return full;
+        }
+
+        if (auto storedOpt = m_liveAstEditor->getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
+          auto raw = std::move(*storedOpt);
+          if (raw.size() > kMaxStored) {
+            raw.resize(static_cast<std::size_t>(kMaxStored));
+          }
+
+          const bool isZlibType = (type == "ZLIB");
+          const bool looksZlib = (!isZlibType && raw.size() >= 2 && looks_like_zlib_cmf_flg(raw[0], raw[1]));
+          if (!isZlibType && !looksZlib) return raw;
+
+          try {
+            std::vector<std::uint8_t> inflated = zlib_inflate_unknown_size(std::span<const std::uint8_t>(raw.data(), raw.size()));
+            if (inflated.size() > kMaxInflated) {
+              inflated.resize(static_cast<std::size_t>(kMaxInflated));
+            }
+            return inflated;
+          } catch (...) {
+            return raw; // fall back
+          }
+        }
+      }
+
+      const std::uint64_t off = static_cast<std::uint64_t>(baseOffset);
+      std::uint64_t len = static_cast<std::uint64_t>(maxReadable);
+      if (len == 0) {
+        // Fallback for non-embedded files: read as much as we can.
+        const std::uint64_t fsz = static_cast<std::uint64_t>(QFileInfo(path).size());
+        len = (fsz > off) ? (fsz - off) : 0;
+      }
+      len = std::min<std::uint64_t>(len, kMaxStored);
+
+      std::vector<std::uint8_t> raw = read_file_range(path, off, len);
+      if (raw.empty()) return raw;
+
+      // ZLIB in AST often stores compressed bytes, and "view" is only a preview.
+      const bool isZlibType = (type == "ZLIB");
+      const bool looksZlib = (!isZlibType && raw.size() >= 2 && looks_like_zlib_cmf_flg(raw[0], raw[1]));
+      if (!isZlibType && !looksZlib) return raw;
+
+      try {
+        std::vector<std::uint8_t> inflated = zlib_inflate_unknown_size(std::span<const std::uint8_t>(raw.data(), raw.size()));
+        if (inflated.size() > kMaxInflated) {
+          inflated.resize(static_cast<std::size_t>(kMaxInflated));
+        }
+        return inflated;
+      } catch (...) {
+        return raw; // fall back
+      }
+    };
+
+    // Only attempt heavy decode for files that look like textures.
+const QString lowerName = QFileInfo(path).fileName().toLower();
+auto containsDdsMagic = [](const QByteArray& b) -> bool {
+  const int max = std::min<int>(b.size(), 0x4000);
+  for (int i = 0; i + 3 < max; ++i) {
+    if (b[i] == 'D' && b[i+1] == 'D' && b[i+2] == 'S' && b[i+3] == ' ') return true;
+  }
+  return false;
+};
+const bool wantsTexture =
+    (type == "DDS" || type == "P3R" || type == "XPR2") ||
+    lowerName.endsWith(".dds") || lowerName.endsWith(".p3r") ||
+    lowerName.endsWith(".xpr") || lowerName.endsWith(".xpr2") ||
+    (!stored.isEmpty() && (stored.startsWith("DDS ") || stored.startsWith("p3R") || stored.startsWith("P3R") || stored.startsWith("XPR2"))) ||
+    containsDdsMagic(stored) || containsDdsMagic(view) ||
+    (!stored.isEmpty() && stored.size() >= 4 && std::memcmp(stored.data(), "XPR2", 4) == 0) ||
+    (!view.isEmpty() && view.size() >= 4 && std::memcmp(view.data(), "XPR2", 4) == 0);
+
+if (wantsTexture) {
+  clearCurrentTextureState();
+  // Ensure we don't show stale preview if decode fails.
+  if (m_imageView) m_imageView->setPixmap(QPixmap());
+  if (m_imageView) m_imageView->setText("");
+  m_textureOriginal = QPixmap();
+  if (m_viewTabs) m_viewTabs->setCurrentIndex(2);
+
+  std::vector<std::uint8_t> payload = load_full_payload();
+  if (!payload.empty()) {
+    const bool wasXpr2 = (payload.size() >= 4 && std::memcmp(payload.data(), "XPR2", 4) == 0);
+    const bool wasP3R = (payload.size() >= 3 &&
+                         (std::memcmp(payload.data(), "p3R", 3) == 0 ||
+                          std::memcmp(payload.data(), "P3R", 3) == 0));
+
+    // Many textures are either:
+    //  - Standard DDS (starts with "DDS ")
+    //  - P3R-wrapped DDS (starts with "p3R"/"P3R", often just a magic swap)
+    //  - EA-wrapped DDS payload (no DDS header; requires rebuild using EA header + AST flags)
+    std::span<const std::uint8_t> texBytes(payload.data(), payload.size());
+    std::vector<std::uint8_t> rebuilt;
+
+    const bool startsDds = (payload.size() >= 4 &&
+                            payload[0] == 'D' && payload[1] == 'D' &&
+                            payload[2] == 'S' && payload[3] == ' ');
+
+    if (wasXpr2) {
+      // Xbox 360 texture container (tiled DXT/ATI2). Rebuild a standard DDS before decode.
+      std::string name;
+      auto dds = gf::textures::rebuild_xpr2_dds_first(texBytes, &name);
+      if (dds.has_value() && !dds->empty()) {
+        rebuilt = std::move(*dds);
+        texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+        if (m_textureInfo && !name.empty()) {
+          m_textureInfo->setText(QString("XPR2: %1").arg(QString::fromStdString(name)));
+        }
+      }
+    }
+
+    if (wasP3R) {
+      // 1) Magic swap (P3R -> DDS) for the common case.
+      rebuilt = p3rToDds(texBytes);
+      if (auto infoSwap = gf::textures::parse_dds_info(std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size())); infoSwap.has_value()) {
+        texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+      } else {
+        // 2) Header rebuild (handles EA-wrapped cases / missing DDS header)
+        rebuilt = maybe_rebuild_ea_dds(texBytes, astFlags);
+        if (!rebuilt.empty()) {
+          texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+        }
+      }
+    } else if (!startsDds) {
+      // Non-P3R: attempt EA rebuild when the payload doesn't start with "DDS ".
+      rebuilt = maybe_rebuild_ea_dds(texBytes, astFlags);
+      if (!rebuilt.empty()) {
+        texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+      }
+    }
+
+
+    try {
+      auto info = gf::textures::parse_dds_info(texBytes);
+      if (info.has_value()) {
+        m_currentTextureBytes = QByteArray(reinterpret_cast<const char*>(texBytes.data()), static_cast<int>(texBytes.size()));
+        m_currentTextureType = wasXpr2 ? QString("XPR2") : (wasP3R ? QString("P3R") : QString("DDS"));
+        m_currentTextureName = item->text(0);
+        if (renderCurrentTextureMip(0)) {
+          { auto lg = gf::core::Log::get(); if (lg) lg->info("TextureDecode OK: {} ({}x{}, {})", path.toStdString(), info->width, info->height, ddsFormatToString(info->format).toStdString()); }
+          hasTexture = true;
+        } else {
+          m_imageView->setPixmap(QPixmap());
+          if (m_textureInfo) m_textureInfo->setText(QString("Texture %1x%2 (%3) - decode unsupported").arg(info->width).arg(info->height).arg(ddsFormatToString(info->format)));
+          { auto lg = gf::core::Log::get(); if (lg) lg->warn("TextureDecode unsupported: {} ({}x{}, {})", path.toStdString(), info->width, info->height, ddsFormatToString(info->format).toStdString()); }
+        }
+      } else if (wasP3R) {
+        m_imageView->setPixmap(QPixmap());
+        if (m_textureInfo) m_textureInfo->setText("P3R detected, but DDS header could not be rebuilt/found.");
+        { auto lg = gf::core::Log::get(); if (lg) lg->warn("TextureDecode failed: P3R but rebuild failed for {}", path.toStdString()); }
+      }
+    } catch (const std::exception& e) {
+      if (m_imageView) m_imageView->setPixmap(QPixmap());
+      m_textureOriginal = QPixmap();
+      if (m_textureInfo) m_textureInfo->setText(QString("Texture parse failed: %1").arg(e.what()));
+    }
+  }
+
+	  // Auto-select best viewer.
+  if (!hasTexture) {
+    clearCurrentTextureState();
+    if (m_textureInfo) m_textureInfo->setVisible(false);
+  }
+
+  if (m_viewTabs) {
+    int idx = 0; // Hex
+    if (hasTexture) idx = 2;
+    else if (hasRsf) idx = 3;
+    else if (hasText) idx = 1;
+    m_viewTabs->setCurrentIndex(idx);
+  }
+}
+} // end MainWindow::showViewerForItem
+
+} // namespace gf::gui
+
+}

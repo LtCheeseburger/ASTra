@@ -1,0 +1,3 @@
+D:/source/ASTra/out-win/_deps/spdlog-subbuild/CMakeFiles/spdlog-populate.dir
+D:/source/ASTra/out-win/_deps/spdlog-subbuild/CMakeFiles/edit_cache.dir
+D:/source/ASTra/out-win/_deps/spdlog-subbuild/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,18 @@
+Start testing: Mar 12 12:37 Central Daylight Time
+----------------------------------------------------------
+1/1 Testing: gf_tests
+1/1 Test: gf_tests
+Command: "D:/source/ASTra/out-win/tests/unit/gf_tests.exe"
+Directory: D:/source/ASTra/out-win/tests/unit
+"gf_tests" start time: Mar 12 12:37 Central Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Failed.
+"gf_tests" end time: Mar 12 12:37 Central Daylight Time
+"gf_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Mar 12 12:37 Central Daylight Time

@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/source/ASTra/out-win/_deps/spdlog-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
