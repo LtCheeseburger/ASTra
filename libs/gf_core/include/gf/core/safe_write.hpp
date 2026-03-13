@@ -5,6 +5,8 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <functional>
+#include <ostream>
 
 namespace gf::core {
 
@@ -51,5 +53,20 @@ SafeWriteResult safe_write_bytes(const std::filesystem::path& target,
 SafeWriteResult safe_write_text(const std::filesystem::path& target,
                                std::string_view text,
                                const SafeWriteOptions& opt = {});
+
+// Callback-based overload for archives too large to hold in a single buffer.
+//
+// `writer(os, errMsg)` is called with an open binary std::ostream.
+// It must write all bytes and return true on success; on failure it should
+// populate errMsg and return false.  The temp file is deleted on failure and
+// the original target is left untouched.
+//
+// The max_bytes safety limit is enforced by checking the final temp file size
+// after the callback returns (rather than before, since the total is unknown
+// up front).
+using SafeWriteCallback = std::function<bool(std::ostream&, std::string&)>;
+SafeWriteResult safe_write_streamed(const std::filesystem::path& target,
+                                    const SafeWriteCallback&     writer,
+                                    const SafeWriteOptions&      opt = {});
 
 } // namespace gf::core

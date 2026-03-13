@@ -140,4 +140,92 @@ SafeWriteResult safe_write_text(const std::filesystem::path& target,
   return safe_write_bytes(target, std::span<const std::byte>(bytes, text.size()), opt);
 }
 
+SafeWriteResult safe_write_streamed(const std::filesystem::path& target,
+                                    const SafeWriteCallback&     writer,
+                                    const SafeWriteOptions&      opt) {
+  try {
+    const auto parent = target.parent_path();
+    if (!parent.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(parent, ec);
+      if (ec) return fail("Failed to create parent directories: " + ec.message());
+    }
+
+    const std::string tmpName = target.filename().string() + ".tmp_" + random_token();
+    const std::filesystem::path tmpPath = target.parent_path() / tmpName;
+
+    // Write via callback into the temp file.
+    {
+      std::ofstream out(tmpPath, std::ios::binary | std::ios::trunc);
+      if (!out) return fail("Failed to open temp file for writing.", std::nullopt, tmpPath);
+
+      std::string cbErr;
+      if (!writer(out, cbErr)) {
+        std::error_code ec;
+        std::filesystem::remove(tmpPath, ec);
+        return fail(cbErr.empty() ? "Stream write callback failed." : cbErr);
+      }
+
+      out.flush();
+      if (!out) {
+        std::error_code ec;
+        std::filesystem::remove(tmpPath, ec);
+        return fail("Failed to flush temp file after stream write.");
+      }
+    }
+
+    // Enforce max_bytes limit by checking the actual written file size.
+    if (opt.max_bytes != 0) {
+      std::error_code ec;
+      const auto written = std::filesystem::file_size(tmpPath, ec);
+      if (ec || written > opt.max_bytes) {
+        std::filesystem::remove(tmpPath, ec);
+        return fail("Refusing to commit: written file exceeds max_bytes safety limit.");
+      }
+    }
+
+    // Create backup of existing destination (optional).
+    std::optional<std::filesystem::path> backupPath;
+    if (opt.make_backup) {
+      std::error_code ec;
+      if (std::filesystem::exists(target, ec) && !ec) {
+        const std::string suffix = opt.backup_suffix.empty() ? timestamp_suffix() : opt.backup_suffix;
+        backupPath = target;
+        backupPath->replace_filename(target.filename().string() + suffix);
+        if (std::filesystem::exists(*backupPath, ec) && !ec)
+          backupPath->replace_filename(target.filename().string() + suffix + "_" + random_token());
+        std::filesystem::rename(target, *backupPath, ec);
+        if (ec) {
+          std::filesystem::remove(tmpPath, ec);
+          return fail("Failed to create backup: " + ec.message());
+        }
+      }
+    }
+
+    // Promote temp → target.
+    {
+      std::error_code ec;
+      std::filesystem::rename(tmpPath, target, ec);
+      if (ec) {
+        if (backupPath) {
+          std::error_code ec2;
+          std::filesystem::rename(*backupPath, target, ec2);
+        }
+        std::filesystem::remove(tmpPath, ec);
+        return fail("Failed to replace destination: " + ec.message(), backupPath, tmpPath);
+      }
+    }
+
+    SafeWriteResult ok;
+    ok.ok = true;
+    ok.message = "OK";
+    ok.backup_path = backupPath;
+    ok.temp_path = std::nullopt;
+    return ok;
+
+  } catch (const std::exception& e) {
+    return fail(std::string("Exception during safe streamed write: ") + e.what());
+  }
+}
+
 } // namespace gf::core

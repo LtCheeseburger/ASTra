@@ -377,6 +377,7 @@ private:
   // In-memory AST edit session for the currently edited container.
   std::unique_ptr<gf::core::AstContainerEditor> m_liveAstEditor;
   QString m_liveAstPath;
+  bool m_saveInProgress = false;
 
   // Cache: key -> parsed? (key is absolutePath or absolutePath@offset)
   // Parsing state for expandable (embedded) AST nodes.

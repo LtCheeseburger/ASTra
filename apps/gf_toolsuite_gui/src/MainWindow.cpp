@@ -2775,6 +2775,11 @@ void MainWindow::openStandaloneApt(const QString& aptPath) {
 }
 
 void MainWindow::onSaveAs() {
+  if (m_saveInProgress) {
+    showInfoDialog("Save As", "A save is already in progress.");
+    return;
+  }
+
   const QString srcPath = m_liveAstEditor ? m_liveAstPath : m_doc.path;
   if (srcPath.isEmpty()) {
     showInfoDialog("Save As", "No document open.");
@@ -2791,73 +2796,164 @@ void MainWindow::onSaveAs() {
                                                        "EA Archives (*.ast *.bgfa);;All Files (*.*)");
   if (outPath.isEmpty()) return;
 
-  // Use in-memory editor bytes (includes all pending replacements) if available;
-  // otherwise fall back to a plain copy of the on-disk file.
-  std::vector<std::uint8_t> bytes;
-  if (m_liveAstEditor) {
-    std::string err;
-    bytes = m_liveAstEditor->rebuild(&err);
-    if (bytes.empty() && !err.empty()) {
-      showErrorDialog("Save As", "Failed to rebuild AST.", QString::fromStdString(err), true);
+  struct SaveAsResult {
+    bool ok = false;
+    QString error;
+  };
+
+  m_saveInProgress = true;
+  if (m_actSave) m_actSave->setEnabled(false);
+  if (m_actSaveAs) m_actSaveAs->setEnabled(false);
+  if (m_actRevert) m_actRevert->setEnabled(false);
+  statusBar()->showMessage(QString("Saving copy to %1...").arg(QDir::toNativeSeparators(outPath)));
+
+  std::optional<gf::core::AstContainerEditor> editorSnapshot;
+  if (m_liveAstEditor) editorSnapshot = *m_liveAstEditor;
+  const std::string srcPathStd = srcPath.toStdString();
+  const std::string outPathStd = outPath.toStdString();
+
+  auto* watcher = new QFutureWatcher<SaveAsResult>(this);
+  connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, outPath]() {
+    const SaveAsResult result = watcher->result();
+    watcher->deleteLater();
+
+    m_saveInProgress = false;
+    updateDocumentActions();
+
+    if (!result.ok) {
+      showErrorDialog("Save As", "Write failed.", result.error, false);
       return;
     }
-  } else {
-    QFile in(srcPath);
-    if (!in.open(QIODevice::ReadOnly)) {
-      showErrorDialog("Save As", "Failed to open source file.", QString(), false);
-      return;
+
+    toastOk(QString("Saved As %1").arg(QFileInfo(outPath).fileName()));
+    statusBar()->showMessage(QString("Saved As → %1").arg(QDir::toNativeSeparators(outPath)), 4000);
+  });
+
+  watcher->setFuture(QtConcurrent::run([editorSnapshot, srcPathStd, outPathStd]() -> SaveAsResult {
+    gf::core::SafeWriteOptions opt;
+    opt.make_backup = true;
+
+    if (editorSnapshot) {
+      std::string err;
+      const auto r = gf::core::safe_write_streamed(
+          outPathStd,
+          [&editorSnapshot, &err](std::ostream& os, std::string& cbErr) {
+            if (!editorSnapshot->rebuildToStream(os, &cbErr)) {
+              if (cbErr.empty()) cbErr = "Failed to rebuild AST stream.";
+              err = cbErr;
+              return false;
+            }
+            return true;
+          },
+          opt);
+      if (!r.ok) return {false, QString::fromStdString(r.message)};
+      if (!err.empty()) return {false, QString::fromStdString(err)};
+      return {true, {}};
     }
-    const QByteArray raw = in.readAll();
-    bytes.assign(reinterpret_cast<const std::uint8_t*>(raw.constData()),
-                 reinterpret_cast<const std::uint8_t*>(raw.constData()) + raw.size());
-  }
 
-  gf::core::SafeWriteOptions opt;
-  opt.make_backup = true;
-  const auto* bptr = reinterpret_cast<const std::byte*>(bytes.data());
-  const auto r = gf::core::safe_write_bytes(outPath.toStdString(),
-                                            std::span<const std::byte>(bptr, bytes.size()),
-                                            opt);
-  if (!r.ok) {
-    showErrorDialog("Save As", "Write failed.", QString::fromStdString(r.message), false);
-    return;
-  }
-
-  toastOk(QString("Saved As %1").arg(QFileInfo(outPath).fileName()));
-  statusBar()->showMessage(QString("Saved As → %1").arg(QDir::toNativeSeparators(outPath)), 4000);
+    const auto r = gf::core::safe_write_streamed(
+        outPathStd,
+        [&srcPathStd](std::ostream& os, std::string& cbErr) {
+          std::ifstream in(srcPathStd, std::ios::binary);
+          if (!in) {
+            cbErr = "Failed to open source file.";
+            return false;
+          }
+          std::array<char, 1024 * 1024> buf{};
+          while (in) {
+            in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+            const std::streamsize got = in.gcount();
+            if (got > 0 && !os.write(buf.data(), got)) {
+              cbErr = "Failed while writing streamed copy.";
+              return false;
+            }
+          }
+          if (!in.eof()) {
+            cbErr = "Failed while reading source file.";
+            return false;
+          }
+          return true;
+        },
+        opt);
+    if (!r.ok) return {false, QString::fromStdString(r.message)};
+    return {true, {}};
+  }));
 }
 
 
 
 void MainWindow::onSave() {
   if (!m_doc.dirty) return;
-
-  if (m_liveAstEditor && !m_liveAstPath.isEmpty()) {
-    std::string err;
-    if (!m_liveAstEditor->writeInPlace(&err, true)) {
-      showErrorDialog("Save", "Failed to write AST container.", QString::fromStdString(err), true);
-      return;
-    }
-  }
-
-  const bool ok = m_nameCache.save();
-  if (!ok) {
-    showErrorDialog("Save", "Failed to save name cache.", QString(), true);
+  if (m_saveInProgress) {
+    showInfoDialog("Save", "A save is already in progress.");
     return;
   }
-  setDirty(false);
-  QString msg = "Saved.";
-  const QString backup = m_nameCache.lastBackupPath();
-  if (!backup.isEmpty()) {
-    msg += QString(" Backup: %1").arg(QFileInfo(backup).fileName());
-  }
+
+  struct SaveResult {
+    bool ok = false;
+    QString error;
+    QString astPath;
+  };
+
+  std::optional<gf::core::AstContainerEditor> editorSnapshot;
+  QString astPath;
   if (m_liveAstEditor && !m_liveAstPath.isEmpty()) {
-    msg += QString(" AST backup created next to %1.").arg(QFileInfo(m_liveAstPath).fileName());
+    editorSnapshot = *m_liveAstEditor;
+    astPath = m_liveAstPath;
   }
-  statusBar()->showMessage(msg, 3500);
+
+  m_saveInProgress = true;
+  if (m_actSave) m_actSave->setEnabled(false);
+  if (m_actSaveAs) m_actSaveAs->setEnabled(false);
+  if (m_actRevert) m_actRevert->setEnabled(false);
+  statusBar()->showMessage("Saving...");
+
+  auto* watcher = new QFutureWatcher<SaveResult>(this);
+  connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher]() {
+    const SaveResult result = watcher->result();
+    watcher->deleteLater();
+
+    m_saveInProgress = false;
+    updateDocumentActions();
+
+    if (!result.ok) {
+      showErrorDialog("Save", "Failed to write AST container.", result.error, true);
+      return;
+    }
+
+    const bool ok = m_nameCache.save();
+    if (!ok) {
+      showErrorDialog("Save", "Failed to save name cache.", QString(), true);
+      return;
+    }
+    setDirty(false);
+    QString msg = "Saved.";
+    const QString backup = m_nameCache.lastBackupPath();
+    if (!backup.isEmpty()) {
+      msg += QString(" Backup: %1").arg(QFileInfo(backup).fileName());
+    }
+    if (!result.astPath.isEmpty()) {
+      msg += QString(" AST backup created next to %1.").arg(QFileInfo(result.astPath).fileName());
+    }
+    statusBar()->showMessage(msg, 3500);
+  });
+
+  watcher->setFuture(QtConcurrent::run([editorSnapshot, astPath]() mutable -> SaveResult {
+    if (editorSnapshot && !astPath.isEmpty()) {
+      std::string err;
+      if (!editorSnapshot->writeInPlace(&err, true)) {
+        return {false, QString::fromStdString(err), astPath};
+      }
+    }
+    return {true, {}, astPath};
+  }));
 }
 
 void MainWindow::onRevert() {
+  if (m_saveInProgress) {
+    showInfoDialog("Revert", "Please wait for the current save to finish before reverting.");
+    return;
+  }
   if (!DocumentLifecycle::maybePromptDiscard(this, m_doc.dirty)) return;
 
   m_liveAstEditor.reset();
@@ -3085,12 +3181,12 @@ void MainWindow::updateDocumentActions() {
     return !backups.isEmpty();
   };
 
-  if (m_actOpen) m_actOpen->setEnabled(true);
-  if (m_actRestoreBackup) m_actRestoreBackup->setEnabled(hasDoc && editingEnabled() && hasBackupNextToDoc());
-  if (m_actSaveAs) m_actSaveAs->setEnabled(hasDoc);
-  if (m_actSave) m_actSave->setEnabled(hasDoc && m_doc.dirty);
-  if (m_actRevert) m_actRevert->setEnabled(hasDoc && m_doc.dirty);
-  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(m_lastReplaceUndo.valid);
+  if (m_actOpen) m_actOpen->setEnabled(!m_saveInProgress);
+  if (m_actRestoreBackup) m_actRestoreBackup->setEnabled(!m_saveInProgress && hasDoc && editingEnabled() && hasBackupNextToDoc());
+  if (m_actSaveAs) m_actSaveAs->setEnabled(!m_saveInProgress && hasDoc);
+  if (m_actSave) m_actSave->setEnabled(!m_saveInProgress && hasDoc && m_doc.dirty);
+  if (m_actRevert) m_actRevert->setEnabled(!m_saveInProgress && hasDoc && m_doc.dirty);
+  if (m_actUndoLastReplace) m_actUndoLastReplace->setEnabled(!m_saveInProgress && m_lastReplaceUndo.valid);
 }
 
 void MainWindow::setDirty(bool dirty) {

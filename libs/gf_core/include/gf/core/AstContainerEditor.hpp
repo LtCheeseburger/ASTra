@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <ostream>
 #include <span>
 #include <string>
 #include <vector>
@@ -94,6 +95,7 @@ bool replaceEntryBytes(std::uint32_t entryIndex,
                     bool makeBackup = true,
                     std::uint64_t maxWriteBytes = 0);
 
+  bool rebuildToStream(std::ostream& os, std::string* err = nullptr) const;
   std::vector<std::uint8_t> rebuild(std::string* err = nullptr) const;
 
   // Validates the structural integrity of raw BGFA bytes (e.g. the output of

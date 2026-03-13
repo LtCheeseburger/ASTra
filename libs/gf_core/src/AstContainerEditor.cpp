@@ -63,6 +63,20 @@ static void writeLE(std::vector<std::uint8_t>& out, T v) {
   writeLE(out, static_cast<std::uint64_t>(v), sizeof(T));
 }
 
+static bool writeLE(std::ostream& os, std::uint64_t v, std::size_t bytes) {
+  for (std::size_t i = 0; i < bytes; ++i) {
+    const char b = static_cast<char>((v >> (8ull * i)) & 0xFFu);
+    if (!os.write(&b, 1)) return false;
+  }
+  return true;
+}
+
+template <typename T>
+static bool writeLE(std::ostream& os, T v) {
+  static_assert(std::is_integral_v<T> || std::is_enum_v<T>);
+  return writeLE(os, static_cast<std::uint64_t>(v), sizeof(T));
+}
+
 static void patchLE(std::vector<std::uint8_t>& out, std::size_t offset, std::uint64_t v, std::size_t bytes) {
   for (std::size_t i = 0; i < bytes; ++i) {
     out[offset + i] = static_cast<std::uint8_t>((v >> (8ull * i)) & 0xFFu);
@@ -123,6 +137,20 @@ static void align_to(std::vector<std::uint8_t>& out, std::uint64_t alignment) {
   const std::uint64_t cur = static_cast<std::uint64_t>(out.size());
   const std::uint64_t pad = (alignment - (cur % alignment)) % alignment;
   out.insert(out.end(), static_cast<std::size_t>(pad), 0);
+}
+
+static bool align_to(std::ostream& os, std::uint64_t alignment, std::uint64_t cur) {
+  if (alignment <= 1) return true;
+  const std::uint64_t pad = (alignment - (cur % alignment)) % alignment;
+  if (pad == 0) return true;
+  std::array<char, 4096> zeros{};
+  std::uint64_t remaining = pad;
+  while (remaining > 0) {
+    const std::size_t chunk = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, zeros.size()));
+    if (!os.write(zeros.data(), static_cast<std::streamsize>(chunk))) return false;
+    remaining -= chunk;
+  }
+  return true;
 }
 
 } // namespace
@@ -320,7 +348,48 @@ static void writeDirectoryEntry(std::vector<std::uint8_t>& out,
   }
 }
 
-std::vector<std::uint8_t> AstContainerEditor::rebuild(std::string* err) const {
+static bool writeDirectoryEntry(std::ostream& os,
+                                const AstContainerEditor::Entry& e,
+                                const AstContainerEditor::Header& h,
+                                std::uint64_t newOffset) {
+  const std::uint8_t flagsWidth = static_cast<std::uint8_t>(1u + h.flagtype);
+
+  if (!writeLE(os, static_cast<std::uint64_t>(e.flags), flagsWidth)) return false;
+
+  if (e.tagBytes.size() != h.tagsize) {
+    std::vector<std::uint8_t> tmp = e.tagBytes;
+    tmp.resize(h.tagsize, 0);
+    if (!tmp.empty() && !os.write(reinterpret_cast<const char*>(tmp.data()), static_cast<std::streamsize>(tmp.size()))) return false;
+  } else if (!e.tagBytes.empty()) {
+    if (!os.write(reinterpret_cast<const char*>(e.tagBytes.data()), static_cast<std::streamsize>(e.tagBytes.size()))) return false;
+  }
+
+  const std::uint64_t base = (h.shiftsize >= 64) ? 0ull : (newOffset >> h.shiftsize);
+  if (!writeLE(os, base, h.offsetsize)) return false;
+  if (!writeLE(os, e.compressedSize, h.compsize)) return false;
+
+  if (h.sizediffsize) {
+    const std::uint64_t sizeDiff = (e.uncompressedSize > e.compressedSize)
+                                      ? (e.uncompressedSize - e.compressedSize)
+                                      : 0ull;
+    if (!writeLE(os, sizeDiff, h.sizediffsize)) return false;
+  }
+  if (h.unknownsize) {
+    if (!writeLE(os, e.unknownField, h.unknownsize)) return false;
+  }
+
+  if (e.nameBytes.size() != h.fileNameLength) {
+    std::vector<std::uint8_t> tmp = e.nameBytes;
+    tmp.resize(h.fileNameLength, 0);
+    if (!tmp.empty() && !os.write(reinterpret_cast<const char*>(tmp.data()), static_cast<std::streamsize>(tmp.size()))) return false;
+  } else if (!e.nameBytes.empty()) {
+    if (!os.write(reinterpret_cast<const char*>(e.nameBytes.data()), static_cast<std::streamsize>(e.nameBytes.size()))) return false;
+  }
+
+  return static_cast<bool>(os);
+}
+
+bool AstContainerEditor::rebuildToStream(std::ostream& os, std::string* err) const {
   if (err) err->clear();
 
   // ── Layout (matches EASE1 / original EA format) ──────────────────────────
@@ -382,48 +451,133 @@ std::vector<std::uint8_t> AstContainerEditor::rebuild(std::string* err) const {
   }
 
   // ── Write header (64 bytes) ───────────────────────────────────────────────
-  std::vector<std::uint8_t> out;
-  out.reserve(static_cast<std::size_t>(dirOffset + dirSize + 4096));
-
-  out.push_back('B'); out.push_back('G'); out.push_back('F'); out.push_back('A');
-  writeLE(out, m_header.magicV);
-  writeLE(out, m_header.fakeFileCount);
-  writeLE(out, m_header.fileCount);
-  writeLE(out, dirOffset, 8);  // always 64
-  writeLE(out, dirSize,   8);  // pre-calculated
-  writeLE(out, m_header.nametype);
-  writeLE(out, m_header.flagtype);
-  writeLE(out, m_header.tagsize);
-  writeLE(out, m_header.offsetsize);
-  writeLE(out, m_header.compsize);
-  writeLE(out, m_header.sizediffsize);
-  writeLE(out, m_header.shiftsize);
-  writeLE(out, m_header.unknownsize);
-  writeLE(out, m_header.tagCount);
-  writeLE(out, m_header.fileNameLength);
-  // 16 bytes of reserved zero padding (bytes 48–63).
-  out.insert(out.end(), 16, 0u);
-  // out.size() is now exactly 64.
-
-  // ── Write directory at offset 64 ─────────────────────────────────────────
-  // Tags list
-  for (std::uint32_t t : m_tags) writeLE(out, t);
-
-  // Directory entries in index order (0, 1, 2, ...)
-  for (const auto& e : m_entries) {
-    writeDirectoryEntry(out, e, m_header, newOffsets[e.index]);
+  if (!os.write("BGFA", 4) ||
+      !writeLE(os, m_header.magicV) ||
+      !writeLE(os, m_header.fakeFileCount) ||
+      !writeLE(os, m_header.fileCount) ||
+      !writeLE(os, dirOffset, 8) ||
+      !writeLE(os, dirSize, 8) ||
+      !writeLE(os, m_header.nametype) ||
+      !writeLE(os, m_header.flagtype) ||
+      !writeLE(os, m_header.tagsize) ||
+      !writeLE(os, m_header.offsetsize) ||
+      !writeLE(os, m_header.compsize) ||
+      !writeLE(os, m_header.sizediffsize) ||
+      !writeLE(os, m_header.shiftsize) ||
+      !writeLE(os, m_header.unknownsize) ||
+      !writeLE(os, m_header.tagCount) ||
+      !writeLE(os, m_header.fileNameLength)) {
+    if (err) *err = "Failed to write AST header.";
+    return false;
+  }
+  std::array<char, 16> reserved{};
+  if (!os.write(reserved.data(), static_cast<std::streamsize>(reserved.size()))) {
+    if (err) *err = "Failed to write AST header padding.";
+    return false;
   }
 
-  // out.size() is now dirOffset + dirSize (= 64 + dirSize).
-
-  // ── Write data region (entries in original data-offset order) ────────────
-  for (const Entry* ep : sortedByOffset) {
-    align_to(out, alignment);
-    if (!ep->storedBytes.empty()) {
-      out.insert(out.end(), ep->storedBytes.begin(), ep->storedBytes.end());
+  // ── Write directory at offset 64 ─────────────────────────────────────────
+  for (std::uint32_t t : m_tags) {
+    if (!writeLE(os, t)) {
+      if (err) *err = "Failed to write AST tag table.";
+      return false;
     }
   }
 
+  for (const auto& e : m_entries) {
+    if (!writeDirectoryEntry(os, e, m_header, newOffsets[e.index])) {
+      if (err) *err = "Failed to write AST directory entry.";
+      return false;
+    }
+  }
+
+  // ── Write data region (entries in original data-offset order) ────────────
+  for (const Entry* ep : sortedByOffset) {
+    if (!align_to(os, alignment, newOffsets[ep->index])) {
+      if (err) *err = "Failed to write alignment padding.";
+      return false;
+    }
+    if (!ep->storedBytes.empty() &&
+        !os.write(reinterpret_cast<const char*>(ep->storedBytes.data()),
+                  static_cast<std::streamsize>(ep->storedBytes.size()))) {
+      if (err) *err = "Failed to write entry payload bytes.";
+      return false;
+    }
+  }
+
+  if (!os) {
+    if (err) *err = "Output stream entered a failed state during rebuild.";
+    return false;
+  }
+  return true;
+}
+
+std::vector<std::uint8_t> AstContainerEditor::rebuild(std::string* err) const {
+  if (err) err->clear();
+
+  constexpr std::uint64_t kHeaderSize = 64;
+  const std::uint8_t flagsWidth = static_cast<std::uint8_t>(1u + m_header.flagtype);
+  const std::uint64_t recordSize =
+      static_cast<std::uint64_t>(flagsWidth)
+    + static_cast<std::uint64_t>(m_header.tagsize)
+    + static_cast<std::uint64_t>(m_header.offsetsize)
+    + static_cast<std::uint64_t>(m_header.compsize)
+    + static_cast<std::uint64_t>(m_header.sizediffsize)
+    + static_cast<std::uint64_t>(m_header.unknownsize)
+    + static_cast<std::uint64_t>(m_header.fileNameLength);
+  const std::uint64_t dirSize =
+      static_cast<std::uint64_t>(m_header.tagCount) * 4ull
+    + recordSize * static_cast<std::uint64_t>(m_entries.size());
+  const std::uint64_t dirOffset = kHeaderSize;
+  const std::uint64_t alignment = (m_header.shiftsize >= 63) ? 1ull : (1ull << m_header.shiftsize);
+
+  std::vector<const Entry*> sortedByOffset;
+  sortedByOffset.reserve(m_entries.size());
+  for (const auto& e : m_entries) sortedByOffset.push_back(&e);
+  std::stable_sort(sortedByOffset.begin(), sortedByOffset.end(),
+      [](const Entry* a, const Entry* b) { return a->dataOffset < b->dataOffset; });
+
+  std::uint64_t finalSize = dirOffset + dirSize;
+  for (const Entry* ep : sortedByOffset) {
+    if (alignment > 1) {
+      const std::uint64_t pad = (alignment - (finalSize % alignment)) % alignment;
+      finalSize += pad;
+    }
+    finalSize += static_cast<std::uint64_t>(ep->storedBytes.size());
+  }
+
+  std::vector<std::uint8_t> out;
+  if (finalSize > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+    if (err) *err = "Rebuilt AST would exceed addressable memory size on this build.";
+    return out;
+  }
+  out.reserve(static_cast<std::size_t>(finalSize));
+
+  class VectorOStreamBuf final : public std::streambuf {
+  public:
+    explicit VectorOStreamBuf(std::vector<std::uint8_t>& out) : m_out(out) {}
+  protected:
+    std::streamsize xsputn(const char* s, std::streamsize n) override {
+      if (n > 0) {
+        const auto* begin = reinterpret_cast<const std::uint8_t*>(s);
+        m_out.insert(m_out.end(), begin, begin + static_cast<std::size_t>(n));
+      }
+      return n;
+    }
+    int overflow(int ch) override {
+      if (ch == traits_type::eof()) return traits_type::not_eof(ch);
+      m_out.push_back(static_cast<std::uint8_t>(ch));
+      return ch;
+    }
+  private:
+    std::vector<std::uint8_t>& m_out;
+  } buf(out);
+
+  std::ostream os(&buf);
+  if (!rebuildToStream(os, err)) {
+    out.clear();
+    return out;
+  }
   return out;
 }
 
@@ -596,30 +750,20 @@ std::optional<std::vector<std::uint8_t>> AstContainerEditor::getEntryInflatedByt
 bool AstContainerEditor::writeInPlace(std::string* err, bool makeBackup, std::uint64_t maxWriteBytes) {
   if (err) err->clear();
 
-  auto bytes = rebuild(err);
-  if (bytes.empty()) {
-    if (err && err->empty()) *err = "rebuild() produced empty output.";
-    return false;
-  }
-
-  // Validate the rebuilt bytes before touching the on-disk file.
-  // Any structural problem here surfaces as an error — the original file
-  // is left untouched.
-  {
-    std::string valErr;
-    const auto span = std::span<const std::uint8_t>(bytes.data(), bytes.size());
-    if (!validate(span, &valErr)) {
-      if (err) *err = "Post-rebuild validation failed: " + valErr;
-      return false;
-    }
-  }
-
   SafeWriteOptions opt;
   opt.make_backup = makeBackup;
   opt.max_bytes = maxWriteBytes;
 
-  const auto* data = reinterpret_cast<const std::byte*>(bytes.data());
-  const auto res = safe_write_bytes(m_path, std::span<const std::byte>(data, bytes.size()), opt);
+  const auto res = safe_write_streamed(
+      m_path,
+      [this](std::ostream& os, std::string& cbErr) {
+        if (!this->rebuildToStream(os, &cbErr)) {
+          if (cbErr.empty()) cbErr = "rebuildToStream() failed.";
+          return false;
+        }
+        return true;
+      },
+      opt);
   if (!res.ok) {
     if (err) *err = res.message;
     return false;
