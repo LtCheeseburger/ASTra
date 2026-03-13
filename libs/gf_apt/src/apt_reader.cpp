@@ -148,10 +148,21 @@ static void parse_frame_items(const std::vector<std::uint8_t>& aptBuf,
       case kFrameItemBackgroundColor:
         if (can_read(aptBuf, itemPtr, 8)) item.background_rgba = read_u32be(aptBuf.data() + itemPtr + 4);
         break;
-      case kFrameItemInitAction:
+      case kFrameItemInitAction: {
         if (can_read(aptBuf, itemPtr, 8)) item.init_sprite = read_u32be(aptBuf.data() + itemPtr + 4);
+        if (can_read(aptBuf, itemPtr, 12)) {
+          const std::uint32_t actPtr = read_u32be(aptBuf.data() + itemPtr + 8);
+          if (actPtr && actPtr < aptBuf.size()) item.action_bytes_offset = actPtr;
+        }
         break;
-      case kFrameItemAction:
+      }
+      case kFrameItemAction: {
+        if (can_read(aptBuf, itemPtr, 8)) {
+          const std::uint32_t actPtr = read_u32be(aptBuf.data() + itemPtr + 4);
+          if (actPtr && actPtr < aptBuf.size()) item.action_bytes_offset = actPtr;
+        }
+        break;
+      }
       default:
         break;
     }

@@ -1,19 +1,20 @@
-// XPR2 (Xbox 360) -> DDS (mip0) rebuild helper
+// XPR2 (Xbox 360) -> DDS rebuild helper
 //
-// Some EA XPR2 TX2D payloads are stored in a tiled/swizzled layout (needs untile),
-// others are stored linearly (no untile), but both are 16-bit word swapped on disk.
+// EA XPR2 TX2D payloads are stored with:
+//   1. 16-bit word swap applied to the entire texture payload (swap16).
+//   2. Xbox 360 XGAddress2DTiledOffset tiling applied to the block-compressed data.
 //
-// We generate two candidates:
-//   A) word-swap only ("linear")
-//   B) word-swap + untile_360_dxt ("untile")
-// then decode both (BC1/BC2/BC3) and choose the one with the lower edge-discontinuity score.
+// Decode pipeline (matches Noesis tex_XBox360_XPR.py exactly):
+//   raw_xpr2_data → swap16 → XGAddress_untile → standard PC DXT/BC data
+//
+// Import pipeline (inverse):
+//   PC DXT/BC data → XGAddress_retile → swap16 → raw_xpr2_data
 
 #include <gf/textures/xpr2_rebuild.hpp>
 
 #include <gf/textures/xbox360_xpr2_untile.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -64,59 +65,24 @@ static std::uint16_t be16(const std::uint8_t* p) {
   return (std::uint16_t(p[0]) << 8) | std::uint16_t(p[1]);
 }
 
-static std::uint16_t le16(const std::uint8_t* p) {
-  return std::uint16_t(p[0]) | (std::uint16_t(p[1]) << 8);
-}
-
 static std::uint32_t le32(const std::uint8_t* p) {
   return std::uint32_t(p[0]) | (std::uint32_t(p[1]) << 8) | (std::uint32_t(p[2]) << 16) |
          (std::uint32_t(p[3]) << 24);
 }
 
-// XPR2 payloads are stored as 16-bit words with byte order swapped on disk.
-// A simple byte-swap of every 16-bit word is required before any further processing.
+// EA XPR2 payloads are stored as 16-bit words with byte order swapped on disk.
+// A simple swap of every adjacent byte pair converts to standard PC DXT layout.
+// Reference: Noesis plugin rapi.swapEndianArray(data, 2) + rapi.imageUntile360DXT().
+// No additional per-block DXT endian fixup is needed after this swap.
 static void swap16_inplace(std::vector<std::uint8_t>& v) {
   for (std::size_t i = 0; i + 1 < v.size(); i += 2) {
     std::swap(v[i], v[i + 1]);
   }
 }
 
-
-// Xbox 360 BC (DXT) payloads are stored in a GPU-friendly endianness.
-// After swap16_inplace(), additional 32-bit word reordering is required
-// for correct BC block decoding on little-endian hosts.
-static void xbox360_fixup_dxt_endian_inplace(std::vector<std::uint8_t>& v, std::uint32_t bytes_per_block) {
-  if (v.empty()) return;
-  if (bytes_per_block != 8u && bytes_per_block != 16u) return;
-
-  const std::size_t bpb = bytes_per_block;
-  const std::size_t nBlocks = v.size() / bpb;
-
-  for (std::size_t bi = 0; bi < nBlocks; ++bi) {
-    std::uint8_t* b = v.data() + bi * bpb;
-
-    auto swap4 = [&](std::size_t a, std::size_t c) {
-      std::swap(b[a + 0], b[c + 0]);
-      std::swap(b[a + 1], b[c + 1]);
-      std::swap(b[a + 2], b[c + 2]);
-      std::swap(b[a + 3], b[c + 3]);
-    };
-
-    if (bpb == 8) {
-      // BC1/DXT1: swap the two dwords.
-      swap4(0, 4);
-    } else {
-      // BC2/BC3 (DXT3/DXT5): swap dwords within each 8-byte half.
-      swap4(0, 4);
-      swap4(8, 12);
-    }
-  }
-}
-
-// Endian fixup is provided by xbox360_xpr2_untile.
-
 static std::vector<std::uint8_t> build_dds_header(std::uint32_t w, std::uint32_t h,
-                                                  const char fourcc[4]) {
+                                                  const char fourcc[4],
+                                                  std::uint32_t mipCount = 1u) {
   // Minimal DDS header (128 bytes)
   std::vector<std::uint8_t> dds(128, 0);
   auto w32 = [&](std::size_t off, std::uint32_t v) {
@@ -131,9 +97,11 @@ static std::vector<std::uint8_t> build_dds_header(std::uint32_t w, std::uint32_t
   dds[2] = 'S';
   dds[3] = ' ';
   w32(4, 124);
-  w32(8, 0x00001007); // CAPS|HEIGHT|WIDTH|PIXELFORMAT
+  // DDSD_CAPS|DDSD_HEIGHT|DDSD_WIDTH|DDSD_PIXELFORMAT; add DDSD_MIPMAPCOUNT when mips > 1
+  w32(8, 0x00001007u | (mipCount > 1u ? 0x00020000u : 0u));
   w32(12, h);
   w32(16, w);
+  if (mipCount > 1u) w32(28, mipCount); // dwMipMapCount
 
   // Pixel format
   w32(76, 32);
@@ -143,8 +111,8 @@ static std::vector<std::uint8_t> build_dds_header(std::uint32_t w, std::uint32_t
   dds[86] = std::uint8_t(fourcc[2]);
   dds[87] = std::uint8_t(fourcc[3]);
 
-  // Caps
-  w32(108, 0x00001000); // DDSCAPS_TEXTURE
+  // DDSCAPS_TEXTURE; add DDSCAPS_MIPMAP|DDSCAPS_COMPLEX when mips > 1
+  w32(108, 0x00001000u | (mipCount > 1u ? 0x00400008u : 0u));
   return dds;
 }
 
@@ -154,13 +122,19 @@ struct FmtInfo {
 };
 
 static std::optional<FmtInfo> fmt_from_xpr2(std::uint8_t fmt) {
-  // Matches the Noesis plugin used by the user:
-  //   0x52 -> DXT1, 0x53 -> DXT3, 0x54 -> DXT5
+  // Noesis tex_XBox360_XPR.py format code mapping:
+  //   0x52 -> DXT1       (8  bytes/block, colour)
+  //   0x53 -> DXT3       (16 bytes/block, colour+alpha)
+  //   0x54 -> DXT5       (16 bytes/block, colour+alpha)
+  //   0x71 -> ATI2/BC5   (16 bytes/block, two BC4 channels — used for normal maps)
+  //   0x7C -> DXT1 (normal-map variant, identical block layout to 0x52)
   switch (fmt) {
     case 0x52: return FmtInfo{"DXT1", 8};
     case 0x53: return FmtInfo{"DXT3", 16};
     case 0x54: return FmtInfo{"DXT5", 16};
-    default: return std::nullopt;
+    case 0x71: return FmtInfo{"ATI2", 16};
+    case 0x7C: return FmtInfo{"DXT1", 8};
+    default:   return std::nullopt;
   }
 }
 
@@ -230,240 +204,59 @@ static std::vector<std::uint8_t> untile_360_dxt_padded(const std::vector<std::ui
   return linear;
 }
 
-static inline void rgb565_to_rgb888(std::uint16_t c, std::uint8_t& r, std::uint8_t& g,
-                                    std::uint8_t& b) {
-  const std::uint8_t r5 = (c >> 11) & 0x1F;
-  const std::uint8_t g6 = (c >> 5) & 0x3F;
-  const std::uint8_t b5 = (c >> 0) & 0x1F;
-  r = (r5 << 3) | (r5 >> 2);
-  g = (g6 << 2) | (g6 >> 4);
-  b = (b5 << 3) | (b5 >> 2);
-}
 
-static void decode_bc1_block(const std::uint8_t* block, std::uint8_t rgba[16][4]) {
-  const std::uint16_t c0 = le16(block + 0);
-  const std::uint16_t c1 = le16(block + 2);
+// Inverse of untile_360_dxt_padded: tiles a logical (linear) DXT surface into
+// the padded tiled layout used by Xbox 360.  The output buffer is zeroed first
+// so any padding blocks not covered by the logical surface are left as zero.
+static std::vector<std::uint8_t> tile_360_dxt_padded(const std::vector<std::uint8_t>& linear,
+                                                     std::uint32_t width_blocks,
+                                                     std::uint32_t height_blocks,
+                                                     std::uint32_t dst_pitch_blocks,
+                                                     std::uint32_t dst_height_blocks,
+                                                     std::uint32_t bytes_per_block) {
+  std::vector<std::uint8_t> tiled(
+      std::size_t(dst_pitch_blocks) * std::size_t(dst_height_blocks) * std::size_t(bytes_per_block),
+      0);
 
-  std::uint8_t r0, g0, b0, r1, g1, b1;
-  rgb565_to_rgb888(c0, r0, g0, b0);
-  rgb565_to_rgb888(c1, r1, g1, b1);
+  const std::uint32_t tile_w = 8;
+  const std::uint32_t tile_h = 8;
+  const std::uint32_t tiles_x = (dst_pitch_blocks  + tile_w - 1) / tile_w;
+  const std::uint32_t tiles_y = (dst_height_blocks + tile_h - 1) / tile_h;
 
-  std::array<std::array<std::uint8_t, 4>, 4> pal{};
-  pal[0] = {r0, g0, b0, 255};
-  pal[1] = {r1, g1, b1, 255};
+  const std::size_t blocks_per_tile = std::size_t(tile_w) * std::size_t(tile_h);
+  const std::size_t tile_bytes = blocks_per_tile * std::size_t(bytes_per_block);
 
-  if (c0 > c1) {
-    pal[2] = {std::uint8_t((2 * r0 + r1) / 3), std::uint8_t((2 * g0 + g1) / 3),
-              std::uint8_t((2 * b0 + b1) / 3), 255};
-    pal[3] = {std::uint8_t((r0 + 2 * r1) / 3), std::uint8_t((g0 + 2 * g1) / 3),
-              std::uint8_t((b0 + 2 * b1) / 3), 255};
-  } else {
-    pal[2] = {std::uint8_t((r0 + r1) / 2), std::uint8_t((g0 + g1) / 2),
-              std::uint8_t((b0 + b1) / 2), 255};
-    pal[3] = {0, 0, 0, 0};
-  }
+  for (std::uint32_t ty = 0; ty < tiles_y; ++ty) {
+    for (std::uint32_t tx = 0; tx < tiles_x; ++tx) {
+      const std::size_t tile_index = std::size_t(ty) * std::size_t(tiles_x) + std::size_t(tx);
+      const std::size_t tile_base  = tile_index * tile_bytes;
+      if (tile_base >= tiled.size()) continue;
 
-  const std::uint32_t idx = le32(block + 4);
-  for (int i = 0; i < 16; ++i) {
-    const std::uint32_t sel = (idx >> (2 * i)) & 0x3;
-    rgba[i][0] = pal[sel][0];
-    rgba[i][1] = pal[sel][1];
-    rgba[i][2] = pal[sel][2];
-    rgba[i][3] = pal[sel][3];
-  }
-}
+      for (std::uint32_t by = 0; by < tile_h; ++by) {
+        for (std::uint32_t bx = 0; bx < tile_w; ++bx) {
+          const std::uint32_t src_x = tx * tile_w + bx;
+          const std::uint32_t src_y = ty * tile_h + by;
+          if (src_x >= width_blocks || src_y >= height_blocks) continue;
 
-static void decode_bc2_block(const std::uint8_t* block, std::uint8_t rgba[16][4]) {
-  // BC2 (DXT3): explicit 4-bit alpha
-  for (int i = 0; i < 16; ++i) {
-    const std::uint8_t a4 = (i & 1) ? (block[i / 2] >> 4) : (block[i / 2] & 0x0F);
-    rgba[i][3] = std::uint8_t(a4 * 17);
-  }
-  std::uint8_t tmp[16][4]{};
-  decode_bc1_block(block + 8, tmp);
-  for (int i = 0; i < 16; ++i) {
-    rgba[i][0] = tmp[i][0];
-    rgba[i][1] = tmp[i][1];
-    rgba[i][2] = tmp[i][2];
-  }
-}
+          const std::size_t mort = std::size_t(morton2_3bit(bx, by));
+          const std::size_t dst  = tile_base + mort * std::size_t(bytes_per_block);
+          const std::size_t src  = (std::size_t(src_y) * std::size_t(width_blocks) +
+                                    std::size_t(src_x)) * std::size_t(bytes_per_block);
 
-static void decode_bc3_block(const std::uint8_t* block, std::uint8_t rgba[16][4]) {
-  const std::uint8_t a0 = block[0];
-  const std::uint8_t a1 = block[1];
-
-  std::array<std::uint8_t, 8> ap{};
-  ap[0] = a0;
-  ap[1] = a1;
-  if (a0 > a1) {
-    ap[2] = std::uint8_t((6 * a0 + 1 * a1) / 7);
-    ap[3] = std::uint8_t((5 * a0 + 2 * a1) / 7);
-    ap[4] = std::uint8_t((4 * a0 + 3 * a1) / 7);
-    ap[5] = std::uint8_t((3 * a0 + 4 * a1) / 7);
-    ap[6] = std::uint8_t((2 * a0 + 5 * a1) / 7);
-    ap[7] = std::uint8_t((1 * a0 + 6 * a1) / 7);
-  } else {
-    ap[2] = std::uint8_t((4 * a0 + 1 * a1) / 5);
-    ap[3] = std::uint8_t((3 * a0 + 2 * a1) / 5);
-    ap[4] = std::uint8_t((2 * a0 + 3 * a1) / 5);
-    ap[5] = std::uint8_t((1 * a0 + 4 * a1) / 5);
-    ap[6] = 0;
-    ap[7] = 255;
-  }
-
-  std::uint64_t abits = 0;
-  for (int i = 0; i < 6; ++i) abits |= (std::uint64_t(block[2 + i]) << (8 * i));
-  for (int i = 0; i < 16; ++i) {
-    const std::uint8_t sel = std::uint8_t((abits >> (3 * i)) & 0x7);
-    rgba[i][3] = ap[sel];
-  }
-
-  std::uint8_t tmp[16][4]{};
-  decode_bc1_block(block + 8, tmp);
-  for (int i = 0; i < 16; ++i) {
-    rgba[i][0] = tmp[i][0];
-    rgba[i][1] = tmp[i][1];
-    rgba[i][2] = tmp[i][2];
-  }
-}
-
-static std::optional<std::vector<std::uint8_t>> decode_dds_mip0_rgba(
-    std::span<const std::uint8_t> dds, int& outW, int& outH) {
-  if (dds.size() < 128) return std::nullopt;
-  if (std::memcmp(dds.data(), "DDS ", 4) != 0) return std::nullopt;
-
-  const std::uint32_t height = le32(dds.data() + 12);
-  const std::uint32_t width = le32(dds.data() + 16);
-  const std::uint32_t fourcc = le32(dds.data() + 84);
-
-  outW = int(width);
-  outH = int(height);
-  if (outW <= 0 || outH <= 0) return std::nullopt;
-
-  const bool isDXT1 = (fourcc == 0x31545844u);
-  const bool isDXT3 = (fourcc == 0x33545844u);
-  const bool isDXT5 = (fourcc == 0x35545844u);
-  if (!isDXT1 && !isDXT3 && !isDXT5) return std::nullopt;
-
-  const int bw = (outW + 3) / 4;
-  const int bh = (outH + 3) / 4;
-  const int bpp = isDXT1 ? 8 : 16;
-
-  const std::size_t need = std::size_t(bw) * std::size_t(bh) * std::size_t(bpp);
-  if (dds.size() < 128 + need) return std::nullopt;
-
-  const std::uint8_t* src = dds.data() + 128;
-  std::vector<std::uint8_t> rgba(std::size_t(outW) * std::size_t(outH) * 4, 0);
-
-  std::uint8_t px[16][4]{};
-  for (int by = 0; by < bh; ++by) {
-    for (int bx = 0; bx < bw; ++bx) {
-      const std::size_t off = (std::size_t(by) * std::size_t(bw) + std::size_t(bx)) *
-                              std::size_t(bpp);
-      const std::uint8_t* blk = src + off;
-
-      if (isDXT1) decode_bc1_block(blk, px);
-      else if (isDXT3) decode_bc2_block(blk, px);
-      else decode_bc3_block(blk, px);
-
-      for (int py = 0; py < 4; ++py) {
-        for (int pxI = 0; pxI < 4; ++pxI) {
-          const int x = bx * 4 + pxI;
-          const int y = by * 4 + py;
-          if (x >= outW || y >= outH) continue;
-          const int i = py * 4 + pxI;
-          const std::size_t di = (std::size_t(y) * std::size_t(outW) + std::size_t(x)) * 4;
-          rgba[di + 0] = px[i][0];
-          rgba[di + 1] = px[i][1];
-          rgba[di + 2] = px[i][2];
-          rgba[di + 3] = px[i][3];
+          if (src + bytes_per_block <= linear.size() && dst + bytes_per_block <= tiled.size())
+            std::memcpy(tiled.data() + dst, linear.data() + src, bytes_per_block);
         }
       }
     }
   }
-
-  return rgba;
-}
-
-static double edge_score_rgb(const std::vector<std::uint8_t>& rgba, int w, int h) {
-  if (w <= 1 || h <= 1) return 0.0;
-  auto at = [&](int x, int y, int c) -> int {
-    return int(rgba[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(c)]);
-  };
-
-  double score = 0.0;
-  // Sample grid to keep this fast on big textures.
-  const int stepX = std::max(1, w / 256);
-  const int stepY = std::max(1, h / 256);
-
-  for (int y = 0; y < h; y += stepY) {
-    for (int x = 0; x < w; x += stepX) {
-      if (x + 1 < w) {
-        score += double(std::abs(at(x, y, 0) - at(x + 1, y, 0)) +
-                        std::abs(at(x, y, 1) - at(x + 1, y, 1)) +
-                        std::abs(at(x, y, 2) - at(x + 1, y, 2)));
-      }
-      if (y + 1 < h) {
-        score += double(std::abs(at(x, y, 0) - at(x, y + 1, 0)) +
-                        std::abs(at(x, y, 1) - at(x, y + 1, 1)) +
-                        std::abs(at(x, y, 2) - at(x, y + 1, 2)));
-      }
-    }
-  }
-
-  return score;
-}
-
-struct Quality {
-  double black_ratio = 1.0;
-  double variance = 0.0;
-  double edge = 0.0;
-};
-
-static Quality quality_metrics(const std::vector<std::uint8_t>& rgba, int w, int h) {
-  Quality q;
-  if (w <= 0 || h <= 0) return q;
-
-  const int stepX = std::max(1, w / 256);
-  const int stepY = std::max(1, h / 256);
-
-  std::size_t samples = 0;
-  std::size_t black = 0;
-  double mean = 0.0;
-  double m2 = 0.0;
-
-  auto at = [&](int x, int y, int c) -> int {
-    return int(rgba[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(c)]);
-  };
-
-  for (int y = 0; y < h; y += stepY) {
-    for (int x = 0; x < w; x += stepX) {
-      const int r = at(x, y, 0);
-      const int g = at(x, y, 1);
-      const int b = at(x, y, 2);
-      const int l = (r * 299 + g * 587 + b * 114) / 1000;
-
-      // Welford variance.
-      ++samples;
-      const double dl = double(l);
-      const double delta = dl - mean;
-      mean += delta / double(samples);
-      m2 += delta * (dl - mean);
-
-      if (r < 8 && g < 8 && b < 8) ++black;
-    }
-  }
-
-  q.black_ratio = samples ? double(black) / double(samples) : 1.0;
-  q.variance = samples > 1 ? (m2 / double(samples - 1)) : 0.0;
-  q.edge = edge_score_rgb(rgba, w, h);
-  return q;
+  return tiled;
 }
 
 } // namespace
 
 std::optional<std::vector<std::uint8_t>> rebuild_xpr2_dds_first(std::span<const std::uint8_t> xpr2,
-                                                                std::string* outName) {
+                                                                std::string* outName,
+                                                                bool all_mips) {
   auto fail = [&](const std::string& msg) -> std::optional<std::vector<std::uint8_t>> {
     if (outName) *outName = msg;
     return std::nullopt;
@@ -562,134 +355,369 @@ std::optional<std::vector<std::uint8_t>> rebuild_xpr2_dds_first(std::span<const 
                    xpr2.begin() + std::ptrdiff_t(dataOff + surfBytes));
   }
 
-  // Candidate A: endian-fix only (linear on disk)
-  std::vector<std::uint8_t> candLinear = raw;
-  // EA XPR2 BC payloads on Xbox 360 are commonly stored as 16-bit word swapped.
-  // A simple swap16 across the surface matches Noesis' behavior for these titles.
-  swap16_inplace(candLinear);
-  xbox360_fixup_dxt_endian_inplace(candLinear, finfo->bytes_per_block);
-
-  // Candidate B: endian-fix + morton untile.
-  std::vector<std::uint8_t> candUntile = rawSurf.empty() ? raw : rawSurf;
-  swap16_inplace(candUntile);
-  xbox360_fixup_dxt_endian_inplace(candUntile, finfo->bytes_per_block);
-  candUntile = untile_360_dxt_padded(
-      candUntile,
-      widthBlocks,
-      heightBlocks,
-      rawSurf.empty() ? widthBlocks : pitchBlocks,
-      rawSurf.empty() ? heightBlocks : paddedHeightBlocks,
-      finfo->bytes_per_block);
-
-#ifdef USE_XGADDRESS_UNTILE
-  // Candidate C: endian-fix + XGAddress/Xenia2D untile (expects padded surface bytes).
-  std::vector<std::uint8_t> candXg = rawSurf.empty() ? raw : rawSurf;
-  swap16_inplace(candXg);
-  xbox360_fixup_dxt_endian_inplace(candXg, finfo->bytes_per_block);
-  candXg = xbox360_xgaddress_untile_dxt(candXg, widthBlocks, heightBlocks, finfo->bytes_per_block);
-#endif
-
-  std::vector<std::uint8_t> ddsLinear = build_dds_header(width, height, finfo->fourcc);
-  ddsLinear.insert(ddsLinear.end(), candLinear.begin(), candLinear.end());
-
-  std::vector<std::uint8_t> ddsUntile = build_dds_header(width, height, finfo->fourcc);
-  ddsUntile.insert(ddsUntile.end(), candUntile.begin(), candUntile.end());
-
-#ifdef USE_XGADDRESS_UNTILE
-  std::vector<std::uint8_t> ddsXg = build_dds_header(width, height, finfo->fourcc);
-  ddsXg.insert(ddsXg.end(), candXg.begin(), candXg.end());
-#endif
+  // ── Decode pipeline (matches Noesis tex_XBox360_XPR.py exactly) ────────────
+  // Step 1: swap16 (Noesis: rapi.swapEndianArray(data, 2))
+  // Step 2: XGAddress untile (Noesis: rapi.imageUntile360DXT)
+  //
+  // No additional per-block DXT endian fixup — swap16 alone is sufficient.
+  // The earlier xbox360_fixup_dxt_endian_inplace (dword-swap of block halves)
+  // was incorrect; it corrupted both color endpoints and index bits.
+  //
+  // Environment override: ASTRA_XPR2_UNTILE_MODE=linear|morton|xgaddress
+  //   linear    — swap16 only, no untile (rare non-tiled files)
+  //   morton    — swap16 + simple Morton 8×8-block tile (debug/legacy)
+  //   xgaddress — swap16 + XGAddress untile (default, correct for EA NCAA/Madden)
 
   const Xpr2UntileMode forced = xpr2_untile_mode_from_env();
-  if (forced != Xpr2UntileMode::Auto) {
-    if (outName) {
-      *outName += "\n[xpr2] forced untile mode via ASTRA_XPR2_UNTILE_MODE";
-    }
 
-    switch (forced) {
-      case Xpr2UntileMode::Linear: return ddsLinear;
-      case Xpr2UntileMode::Morton: return ddsUntile;
-      case Xpr2UntileMode::XGAddress:
-#ifdef USE_XGADDRESS_UNTILE
-        return ddsXg;
-#else
-        if (outName) {
-          *outName += " (xgaddress requested but USE_XGADDRESS_UNTILE is OFF; using morton)";
-        }
-        return ddsUntile;
-#endif
-      default: break;
-    }
-  }
+  // Surface data with pitch-padding for the untile step.
+  // rawSurf is preferred; falls back to mip-only buffer for small textures
+  // where the full padded surface may not fit within the XPR2 file.
+  std::vector<std::uint8_t>* pSurf = rawSurf.empty() ? &raw : &rawSurf;
 
-  int lw = 0, lh = 0, uw = 0, uh = 0;
-  const auto imgL = decode_dds_mip0_rgba(std::span<const std::uint8_t>(ddsLinear), lw, lh);
-  const auto imgU = decode_dds_mip0_rgba(std::span<const std::uint8_t>(ddsUntile), uw, uh);
-
-#ifdef USE_XGADDRESS_UNTILE
-  int xw = 0, xh = 0;
-  const auto imgX = decode_dds_mip0_rgba(std::span<const std::uint8_t>(ddsXg), xw, xh);
-#endif
-
-  if (!imgL || !imgU || lw != uw || lh != uh) {
-    if (outName) {
-      *outName += "\n[xpr2] autopick: decode failed, default=untile";
-    }
-    return ddsUntile;
-  }
-
-  const Quality qL = quality_metrics(*imgL, lw, lh);
-  const Quality qU = quality_metrics(*imgU, uw, uh);
-
-  auto better = [](const Quality& a, const Quality& b) {
-    // 1) Prefer less "mostly black" coverage.
-    if (std::abs(a.black_ratio - b.black_ratio) > 0.01) return a.black_ratio < b.black_ratio;
-    // 2) Prefer higher variance (more real signal).
-    if (std::abs(a.variance - b.variance) > 1.0) return a.variance > b.variance;
-    // 3) Prefer lower edge discontinuity.
-    return a.edge < b.edge;
+  auto fmt_hex = [](std::uint8_t v) {
+    char b[4]; std::snprintf(b, sizeof(b), "%02X", v); return std::string(b);
   };
 
-#ifdef USE_XGADDRESS_UNTILE
-  if (!imgX || xw != lw || xh != lh) {
-    if (outName) {
-      *outName += "\n[xpr2] autopick: xg decode failed, using best of linear/morton";
+  if (forced == Xpr2UntileMode::Linear) {
+    std::vector<std::uint8_t> cand = raw;
+    swap16_inplace(cand);
+    if (outName) *outName += "\n[xpr2] mode=linear(env) fmt=0x" + fmt_hex(fmt) +
+        " " + std::to_string(width) + "x" + std::to_string(height);
+    auto dds = build_dds_header(width, height, finfo->fourcc);
+    dds.insert(dds.end(), cand.begin(), cand.end());
+    return dds;
+  }
+
+  if (forced == Xpr2UntileMode::Morton) {
+    std::vector<std::uint8_t> cand = *pSurf;
+    swap16_inplace(cand);
+    cand = untile_360_dxt_padded(cand, widthBlocks, heightBlocks,
+        rawSurf.empty() ? widthBlocks : pitchBlocks,
+        rawSurf.empty() ? heightBlocks : paddedHeightBlocks,
+        finfo->bytes_per_block);
+    if (outName) *outName += "\n[xpr2] mode=morton(env) fmt=0x" + fmt_hex(fmt) +
+        " " + std::to_string(width) + "x" + std::to_string(height);
+    auto dds = build_dds_header(width, height, finfo->fourcc);
+    dds.insert(dds.end(), cand.begin(), cand.end());
+    return dds;
+  }
+
+  // Default: XGAddress untile — correct for EA XPR2 (NCAA Football / Madden Xbox 360).
+  if (!all_mips) {
+    std::vector<std::uint8_t> cand = *pSurf;
+    swap16_inplace(cand);
+    cand = xbox360_xgaddress_untile_dxt(cand, widthBlocks, heightBlocks, finfo->bytes_per_block);
+
+    if (outName) *outName += "\n[xpr2] mode=xgaddress fmt=0x" + fmt_hex(fmt) +
+        " " + std::to_string(width) + "x" + std::to_string(height) +
+        " surfIn=" + std::to_string(pSurf->size()) + "B";
+
+    auto dds = build_dds_header(width, height, finfo->fourcc);
+    dds.insert(dds.end(), cand.begin(), cand.end());
+    return dds;
+  }
+
+  // Multi-mip export: walk every mip level stored in the XPR2 payload.
+  // Each mip is independently XGAddress-tiled; pitch is aligned to 32 blocks.
+  struct MipRef { std::size_t off; std::uint32_t wBlocks, hBlocks; };
+  std::vector<MipRef> mipRefs;
+  {
+    std::size_t mipOff = dataOff;
+    std::uint32_t mWB = widthBlocks, mHB = heightBlocks;
+    while (mWB > 0 && mHB > 0) {
+      const std::uint32_t alignedW = (mWB + 31u) & ~31u;
+      const std::size_t tiledBytes = std::size_t(alignedW) * std::size_t(mHB) *
+                                     std::size_t(finfo->bytes_per_block);
+      if (mipOff + tiledBytes > xpr2.size()) break;
+      mipRefs.push_back({mipOff, mWB, mHB});
+      if (mWB == 1u && mHB == 1u) break;
+      mipOff += tiledBytes;
+      mWB = std::max(1u, mWB >> 1u);
+      mHB = std::max(1u, mHB >> 1u);
     }
-    const bool pickLinear = better(qL, qU);
-    return pickLinear ? ddsLinear : ddsUntile;
   }
 
-  const Quality qX = quality_metrics(*imgX, xw, xh);
+  if (mipRefs.empty()) return fail("No mip data found in XPR2");
 
-  enum class Pick { Linear, Morton, XG };
-  Pick pick = Pick::XG;
-  Quality best = qX;
-  if (better(qL, best)) { best = qL; pick = Pick::Linear; }
-  if (better(qU, best)) { best = qU; pick = Pick::Morton; }
+  const auto mipCount = static_cast<std::uint32_t>(mipRefs.size());
+  auto dds = build_dds_header(width, height, finfo->fourcc, mipCount);
 
-  if (outName) {
-    *outName += "\n[xpr2] autopick: "
-                "linear(bk=" + std::to_string(qL.black_ratio) + ",var=" + std::to_string(qL.variance) + ",edge=" + std::to_string(qL.edge) + ") "
-                "morton(bk=" + std::to_string(qU.black_ratio) + ",var=" + std::to_string(qU.variance) + ",edge=" + std::to_string(qU.edge) + ") "
-                "xg(bk=" + std::to_string(qX.black_ratio) + ",var=" + std::to_string(qX.variance) + ",edge=" + std::to_string(qX.edge) + ") "
-                "pick=" + std::string(pick == Pick::Linear ? "linear" : (pick == Pick::Morton ? "morton" : "xgaddress"));
+  for (const auto& ref : mipRefs) {
+    const std::uint32_t alignedW = (ref.wBlocks + 31u) & ~31u;
+    const std::size_t tiledBytes = std::size_t(alignedW) * std::size_t(ref.hBlocks) *
+                                   std::size_t(finfo->bytes_per_block);
+    std::vector<std::uint8_t> mipRaw(
+        xpr2.begin() + std::ptrdiff_t(ref.off),
+        xpr2.begin() + std::ptrdiff_t(ref.off + tiledBytes));
+    swap16_inplace(mipRaw);
+    auto linear = xbox360_xgaddress_untile_dxt(mipRaw, ref.wBlocks, ref.hBlocks,
+                                               finfo->bytes_per_block);
+    dds.insert(dds.end(), linear.begin(), linear.end());
   }
 
-  switch (pick) {
-    case Pick::Linear: return ddsLinear;
-    case Pick::Morton: return ddsUntile;
-    default: return ddsXg;
+  if (outName) *outName += "\n[xpr2] mode=xgaddress fmt=0x" + fmt_hex(fmt) +
+      " " + std::to_string(width) + "x" + std::to_string(height) +
+      " mips=" + std::to_string(mipCount);
+
+  return dds;
+}
+
+std::optional<Xpr2Info> parse_xpr2_info(std::span<const std::uint8_t> xpr2) {
+  if (xpr2.size() < 0x20) return std::nullopt;
+  if (std::memcmp(xpr2.data(), "XPR2", 4) != 0) return std::nullopt;
+
+  const std::uint32_t count = be32(xpr2.data() + 12);
+  if (count == 0) return std::nullopt;
+
+  const std::size_t tableOff = 16;
+  if (tableOff + std::size_t(count) * 16 > xpr2.size()) return std::nullopt;
+
+  Xpr2Info info;
+  info.texture_count = count;
+
+  std::uint32_t tx2d_off_struct = 0;
+  std::uint32_t tx2d_off_name   = 0;
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::uint8_t* e = xpr2.data() + tableOff + std::size_t(i) * 16;
+    if (be32(e + 0) == 0x54583244u /* TX2D */) {
+      tx2d_off_struct = be32(e + 4);
+      tx2d_off_name   = be32(e + 12);
+      break;
+    }
   }
-#else
-  const bool pickLinear = better(qL, qU);
-  if (outName) {
-    *outName += "\n[xpr2] autopick: "
-                "linear(bk=" + std::to_string(qL.black_ratio) + ",var=" + std::to_string(qL.variance) + ",edge=" + std::to_string(qL.edge) + ") "
-                "morton(bk=" + std::to_string(qU.black_ratio) + ",var=" + std::to_string(qU.variance) + ",edge=" + std::to_string(qU.edge) + ") "
-                "pick=" + std::string(pickLinear ? "linear" : "morton");
+  if (!tx2d_off_struct) return std::nullopt;
+
+  // Name (best-effort)
+  if (tx2d_off_name) {
+    const std::size_t nameOff = std::size_t(tx2d_off_name) + 12;
+    if (nameOff < xpr2.size()) {
+      std::size_t end = nameOff;
+      while (end < xpr2.size() && xpr2[end] != 0) ++end;
+      info.first_name = std::string(
+          reinterpret_cast<const char*>(xpr2.data() + nameOff), end - nameOff);
+    }
   }
-  return pickLinear ? ddsLinear : ddsUntile;
-#endif
+
+  // TX2D metadata (mirrors rebuild_xpr2_dds_first layout)
+  const std::size_t meta = std::size_t(tx2d_off_struct) + 12 + 33;
+  if (meta + 7 > xpr2.size()) return std::nullopt;
+
+  const std::uint16_t hBlocks = be16(xpr2.data() + meta + 3);
+  const std::uint16_t wPacked = be16(xpr2.data() + meta + 5);
+  info.height   = (std::uint32_t(hBlocks) + 1u) * 8u;
+  info.width    = (std::uint32_t(wPacked) + 1u) & 0x1FFFu;
+  info.fmt_code = xpr2[meta + 2];
+
+  return info;
+}
+
+std::optional<std::vector<std::uint8_t>> dds_to_xpr2_patch(
+    std::span<const std::uint8_t> original_xpr2,
+    std::span<const std::uint8_t> new_dds,
+    std::string* err)
+{
+  auto fail = [&](const std::string& msg) -> std::optional<std::vector<std::uint8_t>> {
+    if (err) *err = msg;
+    return std::nullopt;
+  };
+
+  // ── Parse original XPR2 (mirrors rebuild_xpr2_dds_first) ──────────────────
+  if (original_xpr2.size() < 0x20) return fail("XPR2 too small");
+  if (std::memcmp(original_xpr2.data(), "XPR2", 4) != 0) return fail("Not an XPR2 file");
+
+  const std::uint32_t header1 = be32(original_xpr2.data() + 4);
+  const std::uint32_t header2 = be32(original_xpr2.data() + 8);
+  const std::uint32_t count   = be32(original_xpr2.data() + 12);
+  if (count == 0) return fail("XPR2 has no entries");
+
+  const std::size_t tableOff = 16;
+  if (tableOff + std::size_t(count) * 16 > original_xpr2.size())
+    return fail("XPR2 resource table truncated");
+
+  const std::uint32_t dataBase = header1 + 12;
+  if (dataBase >= original_xpr2.size()) return fail("XPR2 data base out of range");
+
+  std::uint32_t tx2d_off_struct = 0;
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::uint8_t* e = original_xpr2.data() + tableOff + std::size_t(i) * 16;
+    if (be32(e + 0) == 0x54583244u /* TX2D */) {
+      tx2d_off_struct = be32(e + 4);
+      break;
+    }
+  }
+  if (!tx2d_off_struct) return fail("No TX2D entry found in XPR2");
+
+  const std::size_t meta = std::size_t(tx2d_off_struct) + 12 + 33;
+  if (meta + 7 > original_xpr2.size()) return fail("TX2D metadata out of range");
+
+  const std::uint16_t dataOffBlocks = be16(original_xpr2.data() + meta + 0);
+  const std::uint8_t  fmt           = original_xpr2[meta + 2];
+  const std::uint16_t hBlocks       = be16(original_xpr2.data() + meta + 3);
+  const std::uint16_t wPacked       = be16(original_xpr2.data() + meta + 5);
+
+  const std::uint32_t orig_height = (std::uint32_t(hBlocks) + 1u) * 8u;
+  const std::uint32_t orig_width  = (std::uint32_t(wPacked) + 1u) & 0x1FFFu;
+  if (!orig_width || !orig_height) return fail("XPR2 has invalid dimensions");
+
+  const auto finfo = fmt_from_xpr2(fmt);
+  if (!finfo) return fail("Unsupported XPR2 format code 0x" + [fmt](){
+      char buf[8]; std::snprintf(buf, sizeof(buf), "%02X", fmt); return std::string(buf); }());
+
+  if (header2 < 0x100) return fail("XPR2 data length field too small");
+  const std::uint32_t totalBlocks = header2 / 0x100;
+  if (dataOffBlocks >= totalBlocks) return fail("XPR2 data block offset out of range");
+
+  const std::size_t dataOff = std::size_t(dataBase) + std::size_t(dataOffBlocks) * 0x100;
+  if (dataOff >= original_xpr2.size()) return fail("XPR2 texture data starts outside file");
+
+  // Geometry + stored mip layout contract.
+  auto align_up_u32 = [](std::uint32_t v, std::uint32_t a) { return (v + (a - 1u)) & ~(a - 1u); };
+  const std::uint32_t widthBlocks  = (orig_width  + 3u) / 4u;
+  const std::uint32_t heightBlocks = (orig_height + 3u) / 4u;
+  if (widthBlocks == 0 || heightBlocks == 0) return fail("XPR2 has invalid block geometry");
+
+  struct MipLayout {
+    std::uint32_t level = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::uint32_t widthBlocks = 0;
+    std::uint32_t heightBlocks = 0;
+    std::size_t linearBytes = 0;
+    std::size_t tiledBytes = 0;
+    std::size_t paddedBytes = 0;
+    std::size_t offset = 0;
+  };
+
+  std::vector<MipLayout> layouts;
+  {
+    std::size_t mipOff = dataOff;
+    std::uint32_t mW = orig_width;
+    std::uint32_t mH = orig_height;
+    std::uint32_t mWB = widthBlocks;
+    std::uint32_t mHB = heightBlocks;
+    std::uint32_t level = 0;
+    while (mWB > 0 && mHB > 0) {
+      const std::size_t linearBytes = std::size_t(mWB) * std::size_t(mHB) * std::size_t(finfo->bytes_per_block);
+      const std::uint32_t pitchBlocks = align_up_u32(mWB, 32u);
+      const std::uint32_t tileHBlocks = (finfo->bytes_per_block == 8u) ? 16u : 8u;
+      const std::uint32_t paddedHeightBlocks = align_up_u32(mHB, tileHBlocks);
+      const std::size_t paddedBytes = std::size_t(pitchBlocks) * std::size_t(paddedHeightBlocks) * std::size_t(finfo->bytes_per_block);
+      const std::uint32_t alignedWidthBlocks = (mWB + 31u) & ~31u;
+      const std::size_t tiledBytes = std::size_t(alignedWidthBlocks) * std::size_t(mHB) * std::size_t(finfo->bytes_per_block);
+      if (mipOff + tiledBytes > original_xpr2.size()) {
+        return fail("XPR2 mip layout is truncated at level " + std::to_string(level));
+      }
+      layouts.push_back(MipLayout{level, mW, mH, mWB, mHB, linearBytes, tiledBytes, paddedBytes, mipOff});
+      if (mWB == 1u && mHB == 1u) break;
+      mipOff += tiledBytes;
+      ++level;
+      mW = std::max(1u, mW >> 1u);
+      mH = std::max(1u, mH >> 1u);
+      mWB = std::max(1u, mWB >> 1u);
+      mHB = std::max(1u, mHB >> 1u);
+    }
+  }
+  if (layouts.empty()) return fail("XPR2 has no writable mip layout");
+  const std::uint32_t originalMipCount = static_cast<std::uint32_t>(layouts.size());
+
+  // ── Validate new DDS ───────────────────────────────────────────────────────
+  if (new_dds.size() < 128) return fail("Replacement DDS is too small");
+  if (std::memcmp(new_dds.data(), "DDS ", 4) != 0) return fail("Replacement is not a DDS file");
+
+  const std::uint32_t dds_height = le32(new_dds.data() + 12);
+  const std::uint32_t dds_width  = le32(new_dds.data() + 16);
+  std::uint32_t dds_mip_count    = le32(new_dds.data() + 28);
+  const std::uint32_t dds_fourcc = le32(new_dds.data() + 84);
+  if (dds_mip_count == 0) dds_mip_count = 1;
+
+  if (dds_width != orig_width || dds_height != orig_height) {
+    return fail("DDS dimensions " + std::to_string(dds_width) + "x" + std::to_string(dds_height) +
+                " do not match XPR2 " + std::to_string(orig_width) + "x" + std::to_string(orig_height));
+  }
+
+  const bool isDXT1 = (dds_fourcc == 0x31545844u);
+  const bool isDXT3 = (dds_fourcc == 0x33545844u);
+  const bool isDXT5 = (dds_fourcc == 0x35545844u);
+  const bool isATI2 = (dds_fourcc == 0x32495441u) || (dds_fourcc == 0x55354342u) || (dds_fourcc == 0x53354342u);
+
+  const char* ddsName = isDXT1 ? "DXT1" : isDXT3 ? "DXT3" : isDXT5 ? "DXT5" : isATI2 ? "ATI2" : nullptr;
+  if (!ddsName)
+    return fail("DDS pixel format is not DXT1/DXT3/DXT5/ATI2 — unsupported for XPR2 import");
+
+  const bool formatOk = (isDXT1 && (fmt == 0x52u || fmt == 0x7Cu)) ||
+                        (isDXT3 && fmt == 0x53u) ||
+                        (isDXT5 && fmt == 0x54u) ||
+                        (isATI2 && fmt == 0x71u);
+  if (!formatOk)
+    return fail(std::string("DDS format ") + ddsName +
+                " is not compatible with XPR2 format code 0x" + [fmt](){
+                    char buf[8]; std::snprintf(buf, sizeof(buf), "%02X", fmt); return std::string(buf); }());
+
+  if (dds_mip_count != originalMipCount) {
+    return fail("DDS mip count " + std::to_string(dds_mip_count) +
+                " does not match original XPR2 mip count " + std::to_string(originalMipCount));
+  }
+
+  std::size_t requiredDdsBytes = 128;
+  for (const auto& mip : layouts) requiredDdsBytes += mip.linearBytes;
+  if (new_dds.size() < requiredDdsBytes) {
+    return fail("DDS data is truncated for the required mip chain (need " + std::to_string(requiredDdsBytes) +
+                " bytes, have " + std::to_string(new_dds.size()) + ")");
+  }
+
+  // ── Reverse-transform: linear DDS data → XPR2 encoded data ───────────────
+  // Import pipeline (inverse of the decode pipeline used in rebuild_xpr2_dds_first):
+  //   Decode: xpr2_raw → swap16 → XGAddress_untile → linear_DXT
+  //   Import: linear_DXT → XGAddress_retile → swap16 → xpr2_raw
+  //
+  // Environment override: ASTRA_XPR2_UNTILE_MODE=linear|morton overrides to
+  // those modes; otherwise XGAddress retile is used (matching the default decode path).
+
+  const Xpr2UntileMode forced = xpr2_untile_mode_from_env();
+  std::vector<std::uint8_t> result(original_xpr2.begin(), original_xpr2.end());
+
+  std::size_t ddsDataOff = 128;
+  for (const auto& mip : layouts) {
+    if (ddsDataOff + mip.linearBytes > new_dds.size()) {
+      return fail("DDS mip " + std::to_string(mip.level) + " data is truncated");
+    }
+
+    std::vector<std::uint8_t> linearData(
+        new_dds.begin() + std::ptrdiff_t(ddsDataOff),
+        new_dds.begin() + std::ptrdiff_t(ddsDataOff + mip.linearBytes));
+    ddsDataOff += mip.linearBytes;
+
+    std::vector<std::uint8_t> encodedData;
+    std::size_t writeSize = 0;
+
+    if (forced == Xpr2UntileMode::Linear) {
+      encodedData = linearData;
+      swap16_inplace(encodedData);
+      writeSize = mip.linearBytes;
+    } else if (forced == Xpr2UntileMode::Morton) {
+      encodedData = tile_360_dxt_padded(linearData, mip.widthBlocks, mip.heightBlocks,
+                                        align_up_u32(mip.widthBlocks, 32u),
+                                        align_up_u32(mip.heightBlocks, (finfo->bytes_per_block == 8u) ? 16u : 8u),
+                                        finfo->bytes_per_block);
+      swap16_inplace(encodedData);
+      writeSize = mip.paddedBytes;
+    } else {
+      encodedData = xbox360_xgaddress_retile_dxt(
+          linearData, mip.widthBlocks, mip.heightBlocks, finfo->bytes_per_block);
+      swap16_inplace(encodedData);
+      writeSize = mip.tiledBytes;
+    }
+
+    if (encodedData.size() < writeSize)
+      return fail("Encoded XPR2 mip " + std::to_string(mip.level) + " is smaller than expected layout");
+    if (mip.offset + writeSize > result.size())
+      return fail("Encoded XPR2 mip " + std::to_string(mip.level) + " would write past the end of the container");
+
+    std::memcpy(result.data() + mip.offset, encodedData.data(), writeSize);
+  }
+
+  return result;
 }
 
 } // namespace gf::textures

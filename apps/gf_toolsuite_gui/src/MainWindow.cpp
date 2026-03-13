@@ -3,6 +3,7 @@
 #include <gf/apt/apt_xml.hpp>
 #include <gf/apt/apt_reader.hpp>
 #include <gf/apt/apt_renderer.hpp>
+#include <gf/apt/apt_action_inspector.hpp>
 #include "AstIndexer.hpp"
 #include "PlatformUtils.hpp"
 #include "gf/core/log.hpp"
@@ -12,6 +13,7 @@
 
 #include <optional>
 #include <filesystem>
+#include <unordered_set>
 
 #include <QLabel>
 #include <QComboBox>
@@ -670,6 +672,92 @@ static std::optional<gf::textures::DdsInfo> tryParseTextureDdsInfo(std::span<con
   } catch (...) {
   }
   return std::nullopt;
+}
+
+
+static bool looks_like_zlib_cmf_flg(std::uint8_t cmf, std::uint8_t flg);
+static std::vector<std::uint8_t> zlib_inflate_unknown_size(std::span<const std::uint8_t> in);
+
+struct ResolvedTexturePayload {
+  std::vector<std::uint8_t> bytes;
+  QString source;
+  std::size_t rawSize = 0;
+  bool usedPreview = false;
+  bool usedPending = false;
+  bool usedInflate = false;
+};
+
+static QString hexSignaturePrefix(std::span<const std::uint8_t> bytes, std::size_t count = 8) {
+  const std::size_t n = std::min<std::size_t>(bytes.size(), count);
+  QStringList parts;
+  parts.reserve(static_cast<int>(n));
+  for (std::size_t i = 0; i < n; ++i) {
+    parts << QString("%1").arg(bytes[i], 2, 16, QChar('0')).toUpper();
+  }
+  return parts.join(' ');
+}
+
+static ResolvedTexturePayload resolveTexturePayloadForEditor(QTreeWidgetItem* item,
+                                                             const QString& type,
+                                                             gf::core::AstContainerEditor& editor,
+                                                             std::uint32_t entryIndex) {
+  ResolvedTexturePayload out;
+
+  if (item) {
+    const QVariant previewVar = item->data(0, Qt::UserRole + 31);
+    if (previewVar.isValid()) {
+      const QByteArray preview = previewVar.toByteArray();
+      if (!preview.isEmpty()) {
+        out.bytes.resize(static_cast<std::size_t>(preview.size()));
+        std::memcpy(out.bytes.data(), preview.constData(), static_cast<std::size_t>(preview.size()));
+        out.source = QStringLiteral("tree.previewBytes");
+        out.rawSize = out.bytes.size();
+        out.usedPreview = true;
+        return out;
+      }
+    }
+
+    const QVariant pendingVar = item->data(0, Qt::UserRole + 30);
+    if (pendingVar.isValid()) {
+      const QByteArray pending = pendingVar.toByteArray();
+      if (!pending.isEmpty()) {
+        out.bytes.resize(static_cast<std::size_t>(pending.size()));
+        std::memcpy(out.bytes.data(), pending.constData(), static_cast<std::size_t>(pending.size()));
+        out.source = QStringLiteral("tree.pendingBytes");
+        out.rawSize = out.bytes.size();
+        out.usedPending = true;
+        return out;
+      }
+    }
+  }
+
+  if (auto storedOpt = editor.getEntryStoredBytes(entryIndex); storedOpt.has_value()) {
+    out.rawSize = storedOpt->size();
+  }
+
+  std::string inflateErr;
+  if (auto inflatedOpt = editor.getEntryInflatedBytes(entryIndex, &inflateErr); inflatedOpt.has_value() && !inflatedOpt->empty()) {
+    out.bytes = *inflatedOpt;
+    out.source = QStringLiteral("editor.getEntryInflatedBytes");
+    return out;
+  }
+
+  if (auto storedOpt = editor.getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
+    out.bytes = *storedOpt;
+    out.source = QStringLiteral("editor.getEntryStoredBytes");
+    const bool isZlibType = (type.compare("ZLIB", Qt::CaseInsensitive) == 0);
+    const bool looksZlib = (!isZlibType && out.bytes.size() >= 2 && looks_like_zlib_cmf_flg(out.bytes[0], out.bytes[1]));
+    if (!isZlibType && looksZlib) {
+      try {
+        out.bytes = zlib_inflate_unknown_size(std::span<const std::uint8_t>(out.bytes.data(), out.bytes.size()));
+        out.source = QStringLiteral("editor.getEntryStoredBytes+zlib.inflate");
+        out.usedInflate = true;
+      } catch (...) {
+      }
+    }
+  }
+
+  return out;
 }
 
 static QString ddsInfoSummary(const gf::textures::DdsInfo& info) {
@@ -4207,7 +4295,8 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
   };
 
   auto isTextureLikeType = [&](const QString& t) -> bool {
-    return (t == "DDS" || t == "P3R" || t == "P3R2" || t == "P3R3" || t == "P3R4" || t == "TGA" || t == "PNG");
+    return (t == "DDS" || t == "P3R" || t == "P3R2" || t == "P3R3" || t == "P3R4" ||
+            t == "XPR2" || t == "XPR" || t == "TGA" || t == "PNG");
   };
 
   QList<QTreeWidgetItem*> selectedItems = m_tree->selectedItems();
@@ -4368,6 +4457,23 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
         outBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
         exportTypeUpper = "DDS";
       }
+    } else if (entryTypeUpper == "XPR2" || entryTypeUpper == "XPR") {
+      // Export XPR2 texture as a DDS file (full mip chain when available).
+      std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
+      std::string xprErr;
+      auto dds = gf::textures::rebuild_xpr2_dds_first(
+          std::span<const std::uint8_t>(payload.data(), payload.size()),
+          &xprErr, /*all_mips=*/true);
+      if (dds.has_value() && dds->size() >= 4 &&
+          std::memcmp(dds->data(), "DDS ", 4) == 0) {
+        outBytes = QByteArray(reinterpret_cast<const char*>(dds->data()), int(dds->size()));
+        exportTypeUpper = "DDS";
+      } else {
+        if (failures) failures->push_back(QString("%1 — XPR2 decode failed: %2")
+                                          .arg(sourceItem->text(0).trimmed(),
+                                               QString::fromStdString(xprErr)));
+        return false;
+      }
     }
 
     const QString ext = defaultExtForTypeUpper(exportTypeUpper);
@@ -4406,6 +4512,7 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
     if (typeUpper == "AST") filter = "AST files (*.ast);;All Files (*)";
     else if (typeUpper.startsWith("P3R")) filter = "DDS/P3R files (*.dds *.p3r);;All Files (*)";
     else if (typeUpper == "DDS") filter = "DDS files (*.dds);;All Files (*)";
+    else if (typeUpper == "XPR2" || typeUpper == "XPR") filter = "DDS files (*.dds);;All Files (*)";
     else if (typeUpper == "PNG") filter = "PNG files (*.png);;All Files (*)";
     else if (typeUpper == "TGA") filter = "TGA files (*.tga);;All Files (*)";
     else if (isTextLikeType(typeUpper)) filter = "Text files (*.xml *.cfg *.txt *.ini *.json *.csv);;All Files (*)";
@@ -4545,6 +4652,94 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
       }
     }
 
+    if (validateTextureReplacement && (typeUpper == "XPR2" || typeUpper == "XPR")) {
+      if (newBytes.size() < 4 || std::memcmp(newBytes.constData(), "DDS ", 4) != 0) {
+        showErrorDialog("Replace Texture Failed", "XPR2 replacement must be a DDS file.", "", false);
+        return;
+      }
+      if (static_cast<std::size_t>(newBytes.size()) < 128 + 8) {
+        showErrorDialog("Replace Texture Failed", "Replacement DDS has no texture data.", "", false);
+        return;
+      }
+      auto newDdsInfo = gf::textures::parse_dds_info(
+          std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
+                                        static_cast<std::size_t>(newBytes.size())));
+      if (!newDdsInfo) {
+        showErrorDialog("Replace Texture Failed", "Cannot parse the replacement DDS header.", "", false);
+        return;
+      }
+      if (newDdsInfo->width == 0 || newDdsInfo->height == 0) {
+        showErrorDialog("Replace Texture Failed", "Replacement DDS has invalid (zero) dimensions.", "", false);
+        return;
+      }
+      auto resolvedBase = resolveTexturePayloadForEditor(item, typeUpper, *ed, entryIndex);
+      { auto lg = gf::core::Log::get(); if (lg) lg->info(
+            "XPR2Replace validate: name='{}' type={} entry={} source={} raw={} resolved={} sig=[{}]",
+            item->text(0).toStdString(), typeUpper.toStdString(), static_cast<unsigned long long>(entryIndex),
+            resolvedBase.source.toStdString(), static_cast<unsigned long long>(resolvedBase.rawSize),
+            static_cast<unsigned long long>(resolvedBase.bytes.size()),
+            hexSignaturePrefix(std::span<const std::uint8_t>(resolvedBase.bytes.data(), resolvedBase.bytes.size())).toStdString()); }
+      if (!resolvedBase.bytes.empty()) {
+        auto xprInfo = gf::textures::parse_xpr2_info(
+            std::span<const std::uint8_t>(resolvedBase.bytes.data(), resolvedBase.bytes.size()));
+        if (xprInfo) {
+          { auto lg = gf::core::Log::get(); if (lg) lg->info(
+                "XPR2Replace contract: name='{}' xpr={}x{} fmt=0x{:02X} mips={} dds={}x{} fmt={} mips={}",
+                item->text(0).toStdString(),
+                static_cast<unsigned>(xprInfo->width), static_cast<unsigned>(xprInfo->height), static_cast<unsigned>(xprInfo->fmt_code),
+                static_cast<unsigned>(xprInfo->mip_count),
+                static_cast<unsigned>(newDdsInfo->width), static_cast<unsigned>(newDdsInfo->height),
+                ddsFormatToString(newDdsInfo->format).toStdString(), static_cast<unsigned>(newDdsInfo->mipCount)); }
+          QStringList mismatchLines;
+          if (xprInfo->width != newDdsInfo->width)
+            mismatchLines << QString("Width mismatch: XPR2 %1 vs DDS %2").arg(xprInfo->width).arg(newDdsInfo->width);
+          if (xprInfo->height != newDdsInfo->height)
+            mismatchLines << QString("Height mismatch: XPR2 %1 vs DDS %2").arg(xprInfo->height).arg(newDdsInfo->height);
+          if (xprInfo->mip_count != newDdsInfo->mipCount)
+            mismatchLines << QString("Mip count mismatch: XPR2 %1 vs DDS %2").arg(xprInfo->mip_count).arg(newDdsInfo->mipCount);
+          const bool fmtMatch =
+              (xprInfo->fmt_code == 0x52 && newDdsInfo->format == gf::textures::DdsFormat::DXT1) ||
+              (xprInfo->fmt_code == 0x53 && newDdsInfo->format == gf::textures::DdsFormat::DXT3) ||
+              (xprInfo->fmt_code == 0x54 && newDdsInfo->format == gf::textures::DdsFormat::DXT5) ||
+              (xprInfo->fmt_code == 0x71 && newDdsInfo->format == gf::textures::DdsFormat::ATI2) ||
+              (xprInfo->fmt_code == 0x7C && newDdsInfo->format == gf::textures::DdsFormat::DXT1);
+          if (!fmtMatch)
+            mismatchLines << QString("Format mismatch: XPR2 fmt=0x%1 vs DDS %2")
+                              .arg(xprInfo->fmt_code, 2, 16, QChar('0'))
+                              .arg(ddsFormatToString(newDdsInfo->format));
+          if (!mismatchLines.isEmpty()) {
+            QString detailText = QString("Original XPR2: %1x%2 | fmt=0x%3 | mips=%4\nIncoming DDS: %5x%6 | %7 | mips=%8\n\n%9")
+                                     .arg(xprInfo->width)
+                                     .arg(xprInfo->height)
+                                     .arg(xprInfo->fmt_code, 2, 16, QChar('0'))
+                                     .arg(xprInfo->mip_count)
+                                     .arg(newDdsInfo->width)
+                                     .arg(newDdsInfo->height)
+                                     .arg(ddsFormatToString(newDdsInfo->format))
+                                     .arg(newDdsInfo->mipCount)
+                                     .arg(mismatchLines.join("\n"));
+            showErrorDialog("Replace Texture Failed",
+                            "DDS replacement does not match the original XPR2 texture contract.",
+                            detailText, false);
+            return;
+          }
+          validationDetails = QString("XPR2 texture replacement (DDS → XPR2)\nOriginal: %1x%2 | fmt=0x%3 | mips=%4\nReplacement: %5x%6 | %7 | mips=%8")
+                                  .arg(xprInfo->width)
+                                  .arg(xprInfo->height)
+                                  .arg(xprInfo->fmt_code, 2, 16, QChar('0'))
+                                  .arg(xprInfo->mip_count)
+                                  .arg(newDdsInfo->width)
+                                  .arg(newDdsInfo->height)
+                                  .arg(ddsFormatToString(newDdsInfo->format))
+                                  .arg(newDdsInfo->mipCount);
+        } else {
+          validationDetails = QString("XPR2 texture replacement (DDS → XPR2)");
+        }
+      } else {
+        validationDetails = QString("XPR2 texture replacement (DDS → XPR2)");
+      }
+    }
+
     QString prompt = QString("This will MODIFY the AST container in memory until you Save.\n\nContainer:\n%1")
                          .arg(QDir::toNativeSeparators(containerPath));
     if (!validationDetails.isEmpty()) {
@@ -4571,6 +4766,64 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
                                                                static_cast<std::size_t>(newBytes.size())),
                                  verByte);
       newBytes = QByteArray(reinterpret_cast<const char*>(conv.data()), int(conv.size()));
+    } else if ((typeUpper == "XPR2" || typeUpper == "XPR") &&
+               newBytes.size() >= 4 && std::memcmp(newBytes.constData(), "DDS ", 4) == 0) {
+      auto resolvedBase = resolveTexturePayloadForEditor(item, typeUpper, *ed, entryIndex);
+      { auto lg = gf::core::Log::get(); if (lg) lg->info(
+            "XPR2Replace patch: name='{}' type={} entry={} nested={} source={} raw={} resolved={} usedPreview={} usedPending={} usedInflate={} sig=[{}]",
+            item->text(0).toStdString(), typeUpper.toStdString(), static_cast<unsigned long long>(entryIndex),
+            isNestedEntry ? 1 : 0, resolvedBase.source.toStdString(),
+            static_cast<unsigned long long>(resolvedBase.rawSize),
+            static_cast<unsigned long long>(resolvedBase.bytes.size()),
+            resolvedBase.usedPreview ? 1 : 0, resolvedBase.usedPending ? 1 : 0,
+            resolvedBase.usedInflate ? 1 : 0,
+            hexSignaturePrefix(std::span<const std::uint8_t>(resolvedBase.bytes.data(), resolvedBase.bytes.size())).toStdString()); }
+
+      if (resolvedBase.bytes.empty()) {
+        showErrorDialog("XPR2 Conversion Failed",
+                        "Could not resolve the original XPR2 payload.",
+                        QString("Source: %1\nResolved size: 0 bytes")
+                            .arg(resolvedBase.source.isEmpty() ? QString("<none>") : resolvedBase.source),
+                        false);
+        return;
+      }
+      if (resolvedBase.bytes.size() < 4 || std::memcmp(resolvedBase.bytes.data(), "XPR2", 4) != 0) {
+        showErrorDialog("XPR2 Conversion Failed",
+                        "Could not convert DDS back to XPR2.",
+                        QString("Resolved base payload is not a raw XPR2 buffer.\n"
+                                "Source: %1\nRaw size: %2 bytes\nResolved size: %3 bytes\nSignature: %4")
+                            .arg(resolvedBase.source.isEmpty() ? QString("<none>") : resolvedBase.source)
+                            .arg(qulonglong(resolvedBase.rawSize))
+                            .arg(qulonglong(resolvedBase.bytes.size()))
+                            .arg(hexSignaturePrefix(std::span<const std::uint8_t>(resolvedBase.bytes.data(), resolvedBase.bytes.size()))),
+                        false);
+        return;
+      }
+
+      std::string convErr;
+      auto patched = gf::textures::dds_to_xpr2_patch(
+          std::span<const std::uint8_t>(resolvedBase.bytes.data(), resolvedBase.bytes.size()),
+          std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
+                                        static_cast<std::size_t>(newBytes.size())),
+          &convErr);
+      if (patched.has_value() && !patched->empty()) {
+        { auto lg = gf::core::Log::get(); if (lg) lg->info(
+              "XPR2Replace patch OK: name='{}' patchedSize={}",
+              item->text(0).toStdString(), static_cast<unsigned long long>(patched->size())); }
+        newBytes = QByteArray(reinterpret_cast<const char*>(patched->data()), int(patched->size()));
+      } else {
+        { auto lg = gf::core::Log::get(); if (lg) lg->warn(
+              "XPR2Replace patch FAILED: name='{}' reason='{}'", item->text(0).toStdString(), convErr); }
+        showErrorDialog("XPR2 Conversion Failed",
+                        "Could not convert DDS back to XPR2.",
+                        QString("Base source: %1\nRaw size: %2 bytes\nResolved size: %3 bytes\nSignature: %4\n\n%5")
+                            .arg(resolvedBase.source.isEmpty() ? QString("<none>") : resolvedBase.source)
+                            .arg(qulonglong(resolvedBase.rawSize))
+                            .arg(qulonglong(resolvedBase.bytes.size()))
+                            .arg(hexSignaturePrefix(std::span<const std::uint8_t>(resolvedBase.bytes.data(), resolvedBase.bytes.size())))
+                            .arg(QString::fromStdString(convErr)), false);
+        return;
+      }
     }
 
     QByteArray previousStoredBytes;
@@ -6368,9 +6621,236 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     lbl->setPos(origin + QPointF(4.0, 4.0));
   }
 
-  if (ch->frames.empty()) {
+  // ── Type helpers ──────────────────────────────────────────────────────────
+  const bool isMovieChar   = (ch->type == 9);
+  const char* charTypeName = isMovieChar ? "Movie" : "Sprite";
+  const char  charTypeTag  = isMovieChar ? 'M' : 'S';
+
+  // ── Static classification signals ─────────────────────────────────────────
+  // Detect whether this container has ActionScript involvement by inspecting the
+  // already-parsed frame items (no bytecode execution — purely structural).
+
+  // 1. Does the character's own timeline include any Action or InitAction items?
+  bool selfHasActions = false;
+  for (const auto& f : ch->frames) {
+    for (const auto& item : f.items) {
+      if (item.kind == gf::apt::AptFrameItemKind::Action
+          || item.kind == gf::apt::AptFrameItemKind::InitAction) {
+        selfHasActions = true;
+        break;
+      }
+    }
+    if (selfHasActions) break;
+  }
+
+  // 2. Does the ROOT movie have an InitAction record that targets this charId?
+  //    InitAction = "run this bytecode when character X is first instantiated."
+  bool hasInitActionFor = false;
+  if (m_currentAptFile) {
+    for (const auto& f : m_currentAptFile->frames) {
+      for (const auto& item : f.items) {
+        if (item.kind == gf::apt::AptFrameItemKind::InitAction
+            && item.init_sprite == charId) {
+          hasInitActionFor = true;
+          break;
+        }
+      }
+      if (hasInitActionFor) break;
+    }
+  }
+
+  // 3. Is this character exported (can be instantiated by linkage name)?
+  std::string exportName;
+  if (m_currentAptFile) {
+    for (const auto& exp : m_currentAptFile->exports)
+      if (exp.character == charId) { exportName = exp.name; break; }
+  }
+
+  // 4. Scan Action/InitAction bytecodes for inline string references and call patterns.
+  //    Uses a lightweight EA APT opcode walker — no execution, purely structural.
+  gf::apt::AptActionHints actionHints;
+  if (m_currentAptFile && !m_currentAptFile->original_apt.empty()) {
+    const auto& aptBuf = m_currentAptFile->original_apt;
+    // Own timeline items
+    for (const auto& f : ch->frames) {
+      for (const auto& item : f.items) {
+        if (item.action_bytes_offset) {
+          auto h = gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset);
+          for (auto& s : h.strings) {
+            bool dup = false;
+            for (const auto& e : actionHints.strings) if (e == s) { dup = true; break; }
+            if (!dup) actionHints.strings.push_back(std::move(s));
+          }
+          if (h.has_call_patterns) actionHints.has_call_patterns = true;
+          actionHints.opcode_count += h.opcode_count;
+        }
+      }
+    }
+    // Root-movie InitAction items that target this sprite
+    for (const auto& f : m_currentAptFile->frames) {
+      for (const auto& item : f.items) {
+        if (item.kind == gf::apt::AptFrameItemKind::InitAction
+            && item.init_sprite == charId
+            && item.action_bytes_offset) {
+          auto h = gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset);
+          for (auto& s : h.strings) {
+            bool dup = false;
+            for (const auto& e : actionHints.strings) if (e == s) { dup = true; break; }
+            if (!dup) actionHints.strings.push_back(std::move(s));
+          }
+          if (h.has_call_patterns) actionHints.has_call_patterns = true;
+          actionHints.opcode_count += h.opcode_count;
+        }
+      }
+    }
+  }
+
+  // Build a compact scene/log annotation: e.g. "[A:3s+I+E]"
+  QStringList annotParts;
+  if (selfHasActions) {
+    if (!actionHints.strings.empty())
+      annotParts << QStringLiteral("A:%1s").arg(actionHints.strings.size());
+    else
+      annotParts << QStringLiteral("A");
+  }
+  if (hasInitActionFor)    annotParts << QStringLiteral("I");
+  if (!exportName.empty()) annotParts << QStringLiteral("E");
+  const QString annot = annotParts.isEmpty()
+      ? QString()
+      : QStringLiteral("[") + annotParts.join(QLatin1Char('+')) + QStringLiteral("]");
+
+  // ── Candidate table selection ──────────────────────────────────────────────
+  // Movie: use its own nested_characters scope (authoritative).
+  // Sprite: no scoped table — inherit the caller's characterTable.
+  const std::vector<gf::apt::AptCharacter>& fallbackScanTable =
+      (isMovieChar && !ch->nested_characters.empty())
+          ? ch->nested_characters
+          : characterTable;
+
+  // ── Candidate discovery ────────────────────────────────────────────────────
+  // Visual types: Shape=1, Image=7, Sprite=5, Movie=9, Import placeholder=0.
+  // Movie: scan full nested_characters (everything in scope belongs to this Movie).
+  // Sprite: use a proximity window [charId+1 .. charId+kProximityWindow] in the
+  //         parent table. EA APT authoring tends to place a widget's children at
+  //         consecutive IDs immediately after the container. If the window yields
+  //         nothing, fall back to exported characters from the root file.
+  constexpr std::size_t   kMaxFallbackChildren = 24;
+  constexpr std::uint32_t kProximityWindow     = 16;
+
+  auto collectCandidates = [&]() -> std::vector<std::uint32_t> {
+    std::vector<std::uint32_t> ids;
+    const auto tableSize = static_cast<std::uint32_t>(fallbackScanTable.size());
+
+    if (isMovieChar) {
+      // Full scan of nested_characters, including import placeholders (type=0).
+      for (std::uint32_t cid = 0; cid < tableSize && ids.size() < kMaxFallbackChildren; ++cid) {
+        if (cid == charId) continue;
+        const std::uint8_t t = fallbackScanTable[cid].type;
+        if (t == 0 || t == 1 || t == 7 || t == 5 || t == 9)
+          ids.push_back(cid);
+      }
+    } else {
+      // Proximity window: [charId+1, charId+kProximityWindow).
+      const std::uint32_t wEnd = std::min(tableSize, charId + 1 + kProximityWindow);
+      for (std::uint32_t cid = charId + 1; cid < wEnd; ++cid) {
+        const std::uint8_t t = fallbackScanTable[cid].type;
+        if (t == 0 || t == 1 || t == 7 || t == 5 || t == 9)
+          ids.push_back(cid);
+      }
+      // Fallback: if proximity produced nothing, try root-level exported chars.
+      if (ids.empty() && m_currentAptFile) {
+        for (const auto& exp : m_currentAptFile->exports) {
+          const std::uint32_t ecid = exp.character;
+          if (ecid == charId || ecid >= tableSize) continue;
+          const std::uint8_t t = fallbackScanTable[ecid].type;
+          if (t == 0 || t == 1 || t == 7 || t == 5 || t == 9) {
+            if (std::find(ids.begin(), ids.end(), ecid) == ids.end())
+              ids.push_back(ecid);
+          }
+          if (ids.size() >= kMaxFallbackChildren) break;
+        }
+      }
+    }
+
+    // Action-evidence prioritization: if any action string matches an export or
+    // import name, move that character to the front of the candidate list.
+    if (!actionHints.strings.empty() && m_currentAptFile) {
+      std::vector<std::uint32_t> priorityIds;
+      for (const auto& s : actionHints.strings) {
+        for (const auto& exp : m_currentAptFile->exports) {
+          if (exp.name == s && exp.character != charId && exp.character < tableSize) {
+            if (std::find(priorityIds.begin(), priorityIds.end(), exp.character) == priorityIds.end())
+              priorityIds.push_back(exp.character);
+          }
+        }
+        for (const auto& imp : m_currentAptFile->imports) {
+          if (imp.name == s && imp.character != charId && imp.character < tableSize) {
+            if (std::find(priorityIds.begin(), priorityIds.end(), imp.character) == priorityIds.end())
+              priorityIds.push_back(imp.character);
+          }
+        }
+      }
+      if (!priorityIds.empty()) {
+        for (const auto pid : ids)
+          if (std::find(priorityIds.begin(), priorityIds.end(), pid) == priorityIds.end())
+            priorityIds.push_back(pid);
+        ids = std::move(priorityIds);
+        if (ids.size() > kMaxFallbackChildren) ids.resize(kMaxFallbackChildren);
+      }
+    }
+
+    return ids;
+  };
+
+  // ── Cycle protection ──────────────────────────────────────────────────────
+  // track the charIds currently being rendered via runtime fallback; prevents
+  // A→B→A loops that the depth guard alone cannot distinguish.
+  thread_local static std::unordered_set<std::uint32_t> s_runtimeActivePath;
+
+  // ── Helper: draw the "RUNTIME M#X / S#X [annot]" dashed outline ──────────
+  const QColor rCol = isMovieChar ? QColor(255, 100, 60, 220) : QColor(255, 160, 60, 220);
+  auto drawRuntimeOutline = [&]() {
+    const QString rLbl = QString("RUNTIME %1#%2%3")
+        .arg(QLatin1Char(charTypeTag)).arg(charId).arg(annot);
+    const QPen   rPen  (rCol, 1.5, Qt::DashLine);
+    const QBrush rBrush(QColor(rCol.red(), rCol.green(), rCol.blue(), 12));
+    const QPointF origin = parentTransform.map(QPointF(0.0, 0.0));
+    bool drewRect = false;
+    if (ch->bounds) {
+      const gf::apt::AptBounds& b = *ch->bounds;
+      const qreal bw = static_cast<qreal>(b.right - b.left);
+      const qreal bh = static_cast<qreal>(b.bottom - b.top);
+      if (bw > 0.0 && bh > 0.0) {
+        auto* rItem = m_aptPreviewScene->addRect(
+            QRectF(static_cast<qreal>(b.left), static_cast<qreal>(b.top), bw, bh),
+            rPen, rBrush);
+        rItem->setTransform(parentTransform);
+        const QPointF tl = parentTransform.map(QPointF(b.left, b.top));
+        auto* lblItem = m_aptPreviewScene->addSimpleText(rLbl);
+        lblItem->setPos(tl.x() + 3.0, tl.y() + 3.0);
+        lblItem->setBrush(QBrush(rCol));
+        drewRect = true;
+      }
+    }
+    if (!drewRect) {
+      auto* lblItem = m_aptPreviewScene->addSimpleText(rLbl);
+      lblItem->setPos(origin + QPointF(4.0, 4.0));
+      lblItem->setBrush(QBrush(rCol));
+    }
+    // In debug mode, show the export name if available — it tells us what
+    // runtime symbol can instantiate this container.
+    if (debugOverlay && !exportName.empty()) {
+      auto* eLbl = m_aptPreviewScene->addSimpleText(
+          QString("export: %1").arg(QString::fromStdString(exportName)));
+      eLbl->setPos(origin + QPointF(4.0, 18.0));
+      eLbl->setBrush(QBrush(QColor(160, 220, 160, 200)));
+    }
+  };
+
+  // ── Helper: emit static placeholder node ──────────────────────────────────
+  auto drawFallbackPlaceholder = [&]() {
     gf::apt::RenderNode plh;
-    plh.kind = (ch->type == 9) ? gf::apt::RenderNode::Kind::Movie : gf::apt::RenderNode::Kind::Sprite;
+    plh.kind = isMovieChar ? gf::apt::RenderNode::Kind::Movie : gf::apt::RenderNode::Kind::Sprite;
     plh.characterId = charId;
     plh.worldTransform.a = static_cast<float>(parentTransform.m11());
     plh.worldTransform.b = static_cast<float>(parentTransform.m12());
@@ -6382,17 +6862,119 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     plh.rootPlacementIndex = rootPlacementIndex;
     plh.parentChainLabel = parentChainLabel.toStdString();
     drawRenderNodeToScene(plh, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+  };
+
+  // ── Runtime fallback renderer ──────────────────────────────────────────────
+  // Discovers visual child candidates and renders them in a 3-column diagnostic
+  // grid. Positions are not game-accurate — ActionScript places objects at runtime.
+  // Returns true when at least one candidate was rendered.
+  auto doRuntimeFallback = [&](const char* stage) -> bool {
+    if (recursionDepth >= kMaxRecursionDepth) return false;
+
+    // Cycle guard: if charId is already on the active fallback stack, stop here.
+    if (s_runtimeActivePath.count(charId)) {
+      if (lg) lg->warn("[APT] {}runtime fallback cycle detected for charId={}",
+                       indent.toStdString(), charId);
+      return false;
+    }
+
+    const std::vector<std::uint32_t> visualIds = collectCandidates();
+
+    if (lg) {
+      lg->debug("[APT] {}runtime container charId={} type={}{}",
+                indent.toStdString(), charId, charTypeName, annot.toStdString());
+      lg->debug("[APT] {}{}", indent.toStdString(), stage);
+      if (!actionHints.strings.empty()) {
+        std::string slist;
+        for (const auto& s : actionHints.strings) { slist += '"'; slist += s; slist += "\" "; }
+        lg->debug("[APT] {}action strings: {}", indent.toStdString(), slist);
+      }
+      lg->debug("[APT] {}fallback child count={}", indent.toStdString(), visualIds.size());
+      if (visualIds.size() >= kMaxFallbackChildren)
+        lg->debug("[APT] {}fallback candidate list capped at {}", indent.toStdString(), kMaxFallbackChildren);
+    }
+    if (visualIds.empty()) return false;
+
+    drawRuntimeOutline();
+
+    // 3-column grid layout: each child is offset by (col*xStep, row*yStep).
+    // Applied in local pre-transform space — diagnostic only, not game positions.
+    constexpr std::size_t kGridCols = 3;
+    constexpr qreal       kColStep  = 160.0;
+    constexpr qreal       kRowStep  = 120.0;
+    const QString childChain = parentChainLabel
+        + QString(" \u2192 RUNTIME%1#%2").arg(QLatin1Char(charTypeTag)).arg(charId);
+
+    s_runtimeActivePath.insert(charId); // push cycle guard
+    for (std::size_t idx = 0; idx < visualIds.size(); ++idx) {
+      const std::uint32_t cid = visualIds[idx];
+      const std::uint8_t  ct  = (cid < fallbackScanTable.size())
+                                 ? fallbackScanTable[cid].type : 0;
+      const char* ctName = (ct == 9) ? "Movie"
+                         : (ct == 5) ? "Sprite"
+                         : (ct == 7) ? "Image"
+                         : (ct == 0) ? "Import"
+                                     : "Shape";
+
+      // Resolve import name for type=0 slots so logs/overlay show something useful.
+      std::string cidImport;
+      if (ct == 0 && m_currentAptFile) {
+        for (const auto& imp : m_currentAptFile->imports)
+          if (imp.character == cid) { cidImport = imp.movie + "/" + imp.name; break; }
+      }
+
+      const qreal xOff = static_cast<qreal>(idx % kGridCols) * kColStep;
+      const qreal yOff = static_cast<qreal>(idx / kGridCols) * kRowStep;
+      const QTransform childTransform = parentTransform * QTransform::fromTranslate(xOff, yOff);
+
+      if (lg) {
+        if (cidImport.empty())
+          lg->debug("[APT] {}fallback child charId={} type={} offset=({},{})",
+                    indent.toStdString(), cid, ctName, xOff, yOff);
+        else
+          lg->debug("[APT] {}fallback child charId={} type=Import import={} offset=({},{})",
+                    indent.toStdString(), cid, cidImport, xOff, yOff);
+      }
+      renderAptCharacterRecursive(cid, childTransform, fallbackScanTable,
+                                  rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
+                                  recursionDepth + 1, childChain);
+    }
+    s_runtimeActivePath.erase(charId); // pop cycle guard
+    return true;
+  };
+
+  // ── Stage 1: no timeline data at all ──────────────────────────────────────
+  if (ch->frames.empty()) {
+    if (!doRuntimeFallback("no static frames"))
+      drawFallbackPlaceholder();
     return;
   }
 
+  // ── Stage 2: timeline exists; try normal static rendering ─────────────────
   const std::vector<gf::apt::AptCharacter>& childTable =
-      (ch->type == 9 && !ch->nested_characters.empty()) ? ch->nested_characters : characterTable;
+      (isMovieChar && !ch->nested_characters.empty()) ? ch->nested_characters : characterTable;
   const gf::apt::AptFrame spriteDl = gf::apt::build_display_list_frame(ch->frames, 0);
   if (lg) lg->debug("[APT] {}sprite nodes={}", indent.toStdString(), spriteDl.placements.size());
+
+  // ── Stage 3: frame 0 DL is empty — classify then fall back ────────────────
+  if (spriteDl.placements.empty()) {
+    if (lg) {
+      lg->debug("[APT] {}static frame empty — classifying container:", indent.toStdString());
+      lg->debug("[APT] {}  selfHasActions={} hasInitAction={} exported={}",
+                indent.toStdString(),
+                selfHasActions, hasInitActionFor, !exportName.empty());
+      lg->debug("[APT] {}static frame empty, using runtime fallback", indent.toStdString());
+    }
+    if (!doRuntimeFallback("static frame empty"))
+      drawFallbackPlaceholder();
+    return;
+  }
+
+  // ── Stage 4: normal recursive rendering ───────────────────────────────────
   renderAptResolvedFrameRecursive(spriteDl, parentTransform, childTable,
                                   rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
                                   recursionDepth + 1,
-                                  parentChainLabel + QStringLiteral(" → S#%1").arg(charId));
+                                  parentChainLabel + QStringLiteral(" \u2192 S#%1").arg(charId));
 }
 
 void MainWindow::renderAptResolvedFrameRecursive(const gf::apt::AptFrame& resolvedFrame,
@@ -8224,8 +8806,23 @@ if (wantsTexture) {
       if (dds.has_value() && !dds->empty()) {
         rebuilt = std::move(*dds);
         texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
-        if (m_textureInfo && !name.empty()) {
-          m_textureInfo->setText(QString("XPR2: %1").arg(QString::fromStdString(name)));
+        if (m_textureInfo) {
+          auto xprInfoD = gf::textures::parse_xpr2_info(
+              std::span<const std::uint8_t>(payload.data(), payload.size()));
+          if (xprInfoD) {
+            const char* fmtName = (xprInfoD->fmt_code == 0x52) ? "DXT1" :
+                                  (xprInfoD->fmt_code == 0x53) ? "DXT3" :
+                                  (xprInfoD->fmt_code == 0x54) ? "DXT5" :
+                                  (xprInfoD->fmt_code == 0x71) ? "ATI2" :
+                                  (xprInfoD->fmt_code == 0x7C) ? "DXT1(NM)" : "Unknown";
+            QString infoText = QString("XPR2 | %1\u00D7%2 | %3")
+                .arg(xprInfoD->width).arg(xprInfoD->height).arg(fmtName);
+            if (!xprInfoD->first_name.empty())
+              infoText += QString(" | %1").arg(QString::fromStdString(xprInfoD->first_name));
+            m_textureInfo->setText(infoText);
+          } else if (!name.empty()) {
+            m_textureInfo->setText(QString("XPR2: %1").arg(QString::fromStdString(name)));
+          }
         }
       }
     }

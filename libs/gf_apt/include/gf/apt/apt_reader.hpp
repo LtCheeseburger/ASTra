@@ -70,6 +70,9 @@ struct AptFrameItem {
   std::uint32_t background_rgba = 0;
   std::uint32_t init_sprite = 0;
   std::string label;               // valid for FrameLabel
+  // Byte offset within original_apt where the action bytecode stream starts.
+  // Valid for Action (kind==1) and InitAction (kind==8); 0 = not available.
+  std::uint64_t action_bytes_offset = 0;
 };
 
 struct AptFrame {
