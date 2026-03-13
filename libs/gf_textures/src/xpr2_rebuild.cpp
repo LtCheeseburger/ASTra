@@ -467,7 +467,9 @@ std::optional<Xpr2Info> parse_xpr2_info(std::span<const std::uint8_t> xpr2) {
   if (xpr2.size() < 0x20) return std::nullopt;
   if (std::memcmp(xpr2.data(), "XPR2", 4) != 0) return std::nullopt;
 
-  const std::uint32_t count = be32(xpr2.data() + 12);
+  const std::uint32_t header1 = be32(xpr2.data() + 4);
+  const std::uint32_t header2 = be32(xpr2.data() + 8);
+  const std::uint32_t count   = be32(xpr2.data() + 12);
   if (count == 0) return std::nullopt;
 
   const std::size_t tableOff = 16;
@@ -503,11 +505,40 @@ std::optional<Xpr2Info> parse_xpr2_info(std::span<const std::uint8_t> xpr2) {
   const std::size_t meta = std::size_t(tx2d_off_struct) + 12 + 33;
   if (meta + 7 > xpr2.size()) return std::nullopt;
 
-  const std::uint16_t hBlocks = be16(xpr2.data() + meta + 3);
-  const std::uint16_t wPacked = be16(xpr2.data() + meta + 5);
+  const std::uint16_t dataOffBlocks = be16(xpr2.data() + meta + 0);
+  const std::uint16_t hBlocks       = be16(xpr2.data() + meta + 3);
+  const std::uint16_t wPacked       = be16(xpr2.data() + meta + 5);
   info.height   = (std::uint32_t(hBlocks) + 1u) * 8u;
   info.width    = (std::uint32_t(wPacked) + 1u) & 0x1FFFu;
   info.fmt_code = xpr2[meta + 2];
+
+  // Walk the mip chain to compute the actual stored mip count.
+  // Uses the same logic as rebuild_xpr2_dds_first (break on truncation,
+  // don't fail hard) so both functions agree on mip_count.
+  const auto finfo = fmt_from_xpr2(info.fmt_code);
+  if (finfo && header2 >= 0x100 && info.width > 0 && info.height > 0) {
+    const std::uint32_t dataBase = header1 + 12;
+    const std::uint32_t totalBlocks = header2 / 0x100;
+    if (dataBase < xpr2.size() && dataOffBlocks < totalBlocks) {
+      const std::size_t dataOff = std::size_t(dataBase) + std::size_t(dataOffBlocks) * 0x100;
+      std::uint32_t mWB = (info.width  + 3u) / 4u;
+      std::uint32_t mHB = (info.height + 3u) / 4u;
+      std::size_t mipOff = dataOff;
+      std::uint32_t mipCount = 0;
+      while (mWB > 0 && mHB > 0) {
+        const std::uint32_t alignedW = (mWB + 31u) & ~31u;
+        const std::size_t tiledBytes = std::size_t(alignedW) * std::size_t(mHB) *
+                                       std::size_t(finfo->bytes_per_block);
+        if (mipOff + tiledBytes > xpr2.size()) break;
+        ++mipCount;
+        if (mWB == 1u && mHB == 1u) break;
+        mipOff += tiledBytes;
+        mWB = std::max(1u, mWB >> 1u);
+        mHB = std::max(1u, mHB >> 1u);
+      }
+      if (mipCount > 0) info.mip_count = mipCount;
+    }
+  }
 
   return info;
 }
@@ -713,6 +744,27 @@ std::optional<std::vector<std::uint8_t>> dds_to_xpr2_patch(
       return fail("Encoded XPR2 mip " + std::to_string(mip.level) + " is smaller than expected layout");
     if (mip.offset + writeSize > result.size())
       return fail("Encoded XPR2 mip " + std::to_string(mip.level) + " would write past the end of the container");
+
+    // Round-trip sanity check: decode the encoded mip back to linear and verify
+    // it matches the input.  This catches tiling formula errors or size mismatches
+    // before writing anything bad into the container.
+    if (forced != Xpr2UntileMode::Linear && forced != Xpr2UntileMode::Morton) {
+      // XGAddress path: encoded = retile(linear) → swap16.
+      // Verify: swap16(encoded[:tiledBytes]) → untile == linearData.
+      std::vector<std::uint8_t> rtCheck(encodedData.begin(),
+                                        encodedData.begin() + std::ptrdiff_t(writeSize));
+      swap16_inplace(rtCheck);
+      auto rtLinear = xbox360_xgaddress_untile_dxt(rtCheck, mip.widthBlocks,
+                                                   mip.heightBlocks,
+                                                   finfo->bytes_per_block);
+      if (rtLinear.size() != linearData.size() || rtLinear != linearData) {
+        return fail("Round-trip verification failed for mip " + std::to_string(mip.level) +
+                    " (" + std::to_string(mip.widthBlocks) + "x" + std::to_string(mip.heightBlocks) +
+                    " blocks, " + std::to_string(finfo->bytes_per_block) + " bpb): " +
+                    "retile→swap16→untile did not reproduce the input DDS data. " +
+                    "This indicates a tiling formula error for this texture size.");
+      }
+    }
 
     std::memcpy(result.data() + mip.offset, encodedData.data(), writeSize);
   }

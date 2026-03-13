@@ -2000,14 +2000,20 @@ textTab->addAction(m_textSaveShortcutAction);
 
   // Page 4 — Character info (read-only)
   {
-    auto [page, form]    = makePage();
-    m_aptCharPage        = page;
-    m_aptCharTypeLabel   = makeReadLabel(page);
-    m_aptCharSigLabel    = makeReadLabel(page);
-    m_aptCharOffsetLabel = makeReadLabel(page);
-    form->addRow("Type",      m_aptCharTypeLabel);
-    form->addRow("Signature", m_aptCharSigLabel);
-    form->addRow("Offset",    m_aptCharOffsetLabel);
+    auto [page, form]         = makePage();
+    m_aptCharPage             = page;
+    m_aptCharTypeLabel        = makeReadLabel(page);
+    m_aptCharSigLabel         = makeReadLabel(page);
+    m_aptCharOffsetLabel      = makeReadLabel(page);
+    m_aptCharFrameCountLabel  = makeReadLabel(page);
+    m_aptCharBoundsLabel      = makeReadLabel(page);
+    m_aptCharImportLabel      = makeReadLabel(page);
+    form->addRow("Type",         m_aptCharTypeLabel);
+    form->addRow("Signature",    m_aptCharSigLabel);
+    form->addRow("Offset",       m_aptCharOffsetLabel);
+    form->addRow("Frames",       m_aptCharFrameCountLabel);
+    form->addRow("Bounds",       m_aptCharBoundsLabel);
+    form->addRow("Import",       m_aptCharImportLabel);
   }
 
   // Page 5 — Frame info (read-only)
@@ -6022,13 +6028,50 @@ bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QStrin
     const QString typeName = (ch.type == 0)
         ? QString("import slot")
         : QString::fromStdString(gf::apt::aptCharTypeName(ch.type));
-    const QString detail = QString("Type: Character\nIndex: %1\nCharacter Type: %2 (%3)\nSignature: 0x%4\nOffset: 0x%5\nNested Frames: %6")
+
+    // Resolve import info for type=0 (import placeholder) slots.
+    QString importInfo;
+    if (ch.type == 0) {
+      for (const auto& imp : file.imports) {
+        if (imp.character == static_cast<std::uint32_t>(i)) {
+          importInfo = QString("%1 :: %2").arg(
+              QString::fromStdString(imp.movie),
+              QString::fromStdString(imp.name));
+          break;
+        }
+      }
+      if (importInfo.isEmpty()) importInfo = "(unresolved import)";
+    }
+
+    // Resolve export linkage name for this character index.
+    QString exportInfo;
+    for (const auto& exp : file.exports) {
+      if (exp.character == static_cast<std::uint32_t>(i)) {
+        exportInfo = QString::fromStdString(exp.name);
+        break;
+      }
+    }
+
+    // Build bounds string if available.
+    QString boundsStr;
+    if (ch.bounds) {
+      boundsStr = QString("L=%1 T=%2 R=%3 B=%4")
+          .arg(ch.bounds->left, 0, 'f', 1)
+          .arg(ch.bounds->top, 0, 'f', 1)
+          .arg(ch.bounds->right, 0, 'f', 1)
+          .arg(ch.bounds->bottom, 0, 'f', 1);
+    }
+
+    QString detail = QString("Type: Character\nIndex: %1\nCharacter Type: %2 (%3)\nSignature: 0x%4\nOffset: 0x%5\nNested Frames: %6")
                                .arg(qulonglong(i))
                                .arg(typeName)
                                .arg(ch.type)
                                .arg(QString::number(qulonglong(ch.signature), 16).toUpper())
                                .arg(QString::number(qulonglong(ch.offset), 16).toUpper())
                                .arg(ch.frames.size());
+    if (!importInfo.isEmpty())  detail += QStringLiteral("\nImport: ") + importInfo;
+    if (!exportInfo.isEmpty())  detail += QStringLiteral("\nExport: ") + exportInfo;
+    if (!boundsStr.isEmpty())   detail += QStringLiteral("\nBounds: ") + boundsStr;
     auto* charItem = addLeaf(charsNode, QString("Character %1 — %2").arg(qulonglong(i)).arg(typeName), QString("type %1").arg(ch.type), detail, kAptNodeCharacter, static_cast<int>(i));
     if (!ch.frames.empty()) {
       auto* charFramesNode = new QTreeWidgetItem(charItem, QStringList() << QString("Frames (%1)").arg(ch.frames.size()) << QString::number(ch.frames.size()));
@@ -6668,50 +6711,128 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
 
   // 4. Scan Action/InitAction bytecodes for inline string references and call patterns.
   //    Uses a lightweight EA APT opcode walker — no execution, purely structural.
+  //    Each AptActionString carries: value, role (opcode context), near_call flag.
   gf::apt::AptActionHints actionHints;
   if (m_currentAptFile && !m_currentAptFile->original_apt.empty()) {
     const auto& aptBuf = m_currentAptFile->original_apt;
+    auto mergeHints = [&](const gf::apt::AptActionHints& h) {
+      for (const auto& s : h.strings) {
+        bool dup = false;
+        for (const auto& e : actionHints.strings) if (e.value == s.value) { dup = true; break; }
+        if (!dup) actionHints.strings.push_back(s);
+      }
+      // Merge detected_calls (de-dup by call_name + first arg).
+      for (const auto& dc : h.detected_calls) {
+        bool dup = false;
+        for (const auto& e : actionHints.detected_calls) {
+          if (e.call_name == dc.call_name &&
+              (e.arg_strings.empty() && dc.arg_strings.empty() ||
+               (!e.arg_strings.empty() && !dc.arg_strings.empty() &&
+                e.arg_strings[0] == dc.arg_strings[0]))) {
+            dup = true; break;
+          }
+        }
+        if (!dup) actionHints.detected_calls.push_back(dc);
+      }
+      if (h.has_call_patterns)   actionHints.has_call_patterns  = true;
+      if (h.likely_attach_movie) actionHints.likely_attach_movie = true;
+      actionHints.opcode_count += h.opcode_count;
+    };
+    const auto& constBuf = m_currentAptFile->original_const;
     // Own timeline items
-    for (const auto& f : ch->frames) {
-      for (const auto& item : f.items) {
-        if (item.action_bytes_offset) {
-          auto h = gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset);
-          for (auto& s : h.strings) {
-            bool dup = false;
-            for (const auto& e : actionHints.strings) if (e == s) { dup = true; break; }
-            if (!dup) actionHints.strings.push_back(std::move(s));
-          }
-          if (h.has_call_patterns) actionHints.has_call_patterns = true;
-          actionHints.opcode_count += h.opcode_count;
-        }
-      }
-    }
+    for (const auto& f : ch->frames)
+      for (const auto& item : f.items)
+        if (item.action_bytes_offset)
+          mergeHints(gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset, constBuf));
     // Root-movie InitAction items that target this sprite
-    for (const auto& f : m_currentAptFile->frames) {
-      for (const auto& item : f.items) {
+    for (const auto& f : m_currentAptFile->frames)
+      for (const auto& item : f.items)
         if (item.kind == gf::apt::AptFrameItemKind::InitAction
-            && item.init_sprite == charId
-            && item.action_bytes_offset) {
-          auto h = gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset);
-          for (auto& s : h.strings) {
-            bool dup = false;
-            for (const auto& e : actionHints.strings) if (e == s) { dup = true; break; }
-            if (!dup) actionHints.strings.push_back(std::move(s));
-          }
-          if (h.has_call_patterns) actionHints.has_call_patterns = true;
-          actionHints.opcode_count += h.opcode_count;
-        }
-      }
+            && item.init_sprite == charId && item.action_bytes_offset)
+          mergeHints(gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset, constBuf));
+  }
+
+  // ── Semantic classification of action strings ─────────────────────────────
+  // Determines what each action string likely represents given the APT context.
+  // Conservative: only upgrades classification, never claims execution certainty.
+  //
+  // Order of precedence:
+  //   1. Exact export name match      → VisualSymbol (highest confidence)
+  //   2. Exact import name match      → ImportSymbol
+  //   3. near_call + PushLiteral      → LikelySymbol (structural evidence)
+  //   4. Known visual prefix (mc_, btn_, tf_, etc.) → LikelyVisual
+  //   5. MemberName / VarName role    → ScriptNoise
+  //   6. UrlTarget / FunctionName     → ScriptNoise
+  enum class AptStrSem : std::uint8_t {
+    Unknown = 0, VisualSymbol, ImportSymbol, LikelySymbol, LikelyVisual, ScriptNoise
+  };
+  auto classifyStr = [&](const gf::apt::AptActionString& as) -> AptStrSem {
+    if (m_currentAptFile) {
+      for (const auto& ex : m_currentAptFile->exports)
+        if (ex.name == as.value) return AptStrSem::VisualSymbol;
+      for (const auto& im : m_currentAptFile->imports)
+        if (im.name == as.value) return AptStrSem::ImportSymbol;
+    }
+    if (as.role == gf::apt::AptStringRole::UrlTarget    ||
+        as.role == gf::apt::AptStringRole::FunctionName ||
+        as.role == gf::apt::AptStringRole::TargetPath)
+      return AptStrSem::ScriptNoise;
+    if (as.role == gf::apt::AptStringRole::FrameLabel)
+      return AptStrSem::ScriptNoise;
+    if (as.near_call && as.role == gf::apt::AptStringRole::PushLiteral)
+      return AptStrSem::LikelySymbol;
+    // Visual prefix heuristics: common EA/Flash UI naming conventions
+    const auto& v = as.value;
+    if (v.size() >= 3) {
+      const std::string lp3 = { static_cast<char>(std::tolower((unsigned char)v[0])),
+                                 static_cast<char>(std::tolower((unsigned char)v[1])),
+                                 static_cast<char>(std::tolower((unsigned char)v[2])) };
+      if (lp3 == "mc_" || lp3 == "btn" || lp3 == "tf_" || lp3 == "spr" || lp3 == "img")
+        return AptStrSem::LikelyVisual;
+    }
+    if (v.size() >= 4) {
+      const std::string lp4 = { static_cast<char>(std::tolower((unsigned char)v[0])),
+                                 static_cast<char>(std::tolower((unsigned char)v[1])),
+                                 static_cast<char>(std::tolower((unsigned char)v[2])),
+                                 static_cast<char>(std::tolower((unsigned char)v[3])) };
+      if (lp4 == "txt_" || lp4 == "text" || lp4 == "lbl_" || lp4 == "clip")
+        return AptStrSem::LikelyVisual;
+    }
+    return AptStrSem::Unknown;
+  };
+
+  // Count strings per category for annotation
+  int nVisualSymbol = 0, nImportSymbol = 0, nLikelySymbol = 0, nLikelyVisual = 0;
+  for (const auto& as : actionHints.strings) {
+    switch (classifyStr(as)) {
+      case AptStrSem::VisualSymbol: ++nVisualSymbol; break;
+      case AptStrSem::ImportSymbol: ++nImportSymbol; break;
+      case AptStrSem::LikelySymbol: ++nLikelySymbol; break;
+      case AptStrSem::LikelyVisual: ++nLikelyVisual; break;
+      default: break;
     }
   }
 
-  // Build a compact scene/log annotation: e.g. "[A:3s+I+E]"
+  // ── Build compact annotation: "[A:2E+1L+I+E]" ────────────────────────────
+  //   A:NE = N exact export/import symbol matches from action strings
+  //   A:NL = N likely-symbol (near_call) strings
+  //   A:Nv = N visual-prefix heuristic strings
+  //   I    = has InitAction targeting this character
+  //   E    = this character is exported by name
   QStringList annotParts;
-  if (selfHasActions) {
-    if (!actionHints.strings.empty())
+  if (selfHasActions || actionHints.opcode_count > 0) {
+    const int nStrong = nVisualSymbol + nImportSymbol;
+    const int nWeak   = nLikelySymbol + nLikelyVisual;
+    if (nStrong > 0 || nWeak > 0) {
+      QString aTag = QStringLiteral("A:");
+      if (nStrong > 0) aTag += QStringLiteral("%1E").arg(nStrong);
+      if (nWeak   > 0) aTag += QStringLiteral("%1L").arg(nWeak);
+      annotParts << aTag;
+    } else if (!actionHints.strings.empty()) {
       annotParts << QStringLiteral("A:%1s").arg(actionHints.strings.size());
-    else
+    } else {
       annotParts << QStringLiteral("A");
+    }
   }
   if (hasInitActionFor)    annotParts << QStringLiteral("I");
   if (!exportName.empty()) annotParts << QStringLiteral("E");
@@ -6737,68 +6858,157 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
   constexpr std::size_t   kMaxFallbackChildren = 24;
   constexpr std::uint32_t kProximityWindow     = 16;
 
+  // Reconstruction confidence: what drove the candidate list?
+  //   Strong   — exact action-string → export/import name match
+  //   Medium   — import/export table evidence but no direct action match
+  //   Weak     — heuristic proximity/global scan, no action evidence
+  enum class ReconConf { Weak, Medium, Strong };
+  ReconConf reconConf = ReconConf::Weak;
+
   auto collectCandidates = [&]() -> std::vector<std::uint32_t> {
     std::vector<std::uint32_t> ids;
     const auto tableSize = static_cast<std::uint32_t>(fallbackScanTable.size());
 
+    auto isVisualType = [](std::uint8_t t) {
+      return t == 0 || t == 1 || t == 7 || t == 5 || t == 9;
+    };
+    auto addUnique = [&](std::uint32_t cid) {
+      if (std::find(ids.begin(), ids.end(), cid) == ids.end())
+        ids.push_back(cid);
+    };
+
+    // ── Tier 0: detected_calls → direct symbol match (highest confidence) ──
+    // When a CALLNAMED* opcode fired with a known function name from the pool
+    // AND the function is an attach/instantiate pattern, the first arg string
+    // is the symbol name (AVM1 pushes args leftmost-first in our captured list).
+    // This is stronger than the string scan below because we know the exact
+    // runtime role of the string (it was the first argument to attachMovie).
+    if (!actionHints.detected_calls.empty() && m_currentAptFile) {
+      static const std::unordered_set<std::string> kInstantiateCalls = {
+          "attachMovie", "duplicateMovieClip"
+      };
+      for (const auto& dc : actionHints.detected_calls) {
+        if (!kInstantiateCalls.count(dc.call_name)) continue;
+        if (dc.arg_strings.empty()) continue;
+        const std::string& sym = dc.arg_strings[0]; // symbolName = first arg
+        if (sym.empty()) continue;
+        for (const auto& exp : m_currentAptFile->exports) {
+          if (exp.name == sym && exp.character != charId
+              && exp.character < tableSize
+              && isVisualType(fallbackScanTable[exp.character].type)) {
+            if (std::find(ids.begin(), ids.end(), exp.character) == ids.end()) {
+              ids.push_back(exp.character);
+              reconConf = ReconConf::Strong;
+            }
+          }
+        }
+        for (const auto& imp : m_currentAptFile->imports) {
+          if (imp.name == sym && imp.character != charId
+              && imp.character < tableSize) {
+            if (std::find(ids.begin(), ids.end(), imp.character) == ids.end()) {
+              ids.push_back(imp.character);
+              if (reconConf != ReconConf::Strong) reconConf = ReconConf::Strong;
+            }
+          }
+        }
+      }
+    }
+
+    // ── Tier 1: exact action-string → export name match ───────────────────
+    // ── Tier 2: exact action-string → import name match ──────────────────
+    // Both are the strongest signal: AVM1 code is mentioning a specific symbol.
+    if (!actionHints.strings.empty() && m_currentAptFile) {
+      std::vector<std::uint32_t> tier1, tier2;
+      for (const auto& as : actionHints.strings) {
+        // Only PushLiteral and near_call strings are credible symbol references.
+        // VarName/MemberName are property accesses, not linkage names.
+        const bool isCredible =
+            (as.role == gf::apt::AptStringRole::PushLiteral) ||
+            (as.role == gf::apt::AptStringRole::VarName && as.near_call);
+        if (!isCredible) continue;
+
+        for (const auto& exp : m_currentAptFile->exports) {
+          if (exp.name == as.value && exp.character != charId && exp.character < tableSize
+              && isVisualType(fallbackScanTable[exp.character].type)) {
+            if (std::find(tier1.begin(), tier1.end(), exp.character) == tier1.end())
+              tier1.push_back(exp.character);
+          }
+        }
+        for (const auto& imp : m_currentAptFile->imports) {
+          if (imp.name == as.value && imp.character != charId && imp.character < tableSize) {
+            if (std::find(tier2.begin(), tier2.end(), imp.character) == tier2.end())
+              tier2.push_back(imp.character);
+          }
+        }
+      }
+      for (auto c : tier1) addUnique(c);
+      for (auto c : tier2) addUnique(c);
+      if (!ids.empty()) reconConf = ReconConf::Strong;
+    }
+
+    // ── Tier 3: LikelySymbol/LikelyVisual strings → fuzzy export prefix match ─
+    // If a string looks like a visual symbol name but wasn't found in exports exactly,
+    // try to find exports/imports whose names contain that string (case-insensitive).
+    // This handles cases like action "BTN_Play" matching export "HUD_BTN_Play".
+    if (!actionHints.strings.empty() && m_currentAptFile) {
+      for (const auto& as : actionHints.strings) {
+        const AptStrSem sem = classifyStr(as);
+        if (sem != AptStrSem::LikelySymbol && sem != AptStrSem::LikelyVisual) continue;
+        if (as.value.size() < 3) continue;
+
+        // Case-insensitive substring search against export names
+        const std::string lval = [&]{
+          std::string lv = as.value;
+          std::transform(lv.begin(), lv.end(), lv.begin(),
+                         [](unsigned char c){ return (char)std::tolower(c); });
+          return lv;
+        }();
+
+        for (const auto& exp : m_currentAptFile->exports) {
+          if (exp.character == charId || exp.character >= tableSize) continue;
+          if (!isVisualType(fallbackScanTable[exp.character].type)) continue;
+          std::string lexp = exp.name;
+          std::transform(lexp.begin(), lexp.end(), lexp.begin(),
+                         [](unsigned char c){ return (char)std::tolower(c); });
+          if (lexp.find(lval) != std::string::npos || lval.find(lexp) != std::string::npos) {
+            if (std::find(ids.begin(), ids.end(), exp.character) == ids.end()) {
+              ids.push_back(exp.character);
+              if (reconConf == ReconConf::Weak) reconConf = ReconConf::Medium;
+            }
+          }
+        }
+      }
+    }
+
+    const std::size_t afterActionTiers = ids.size();
+
+    // ── Tier 4: structural scan (Movie: full table; Sprite: proximity) ─────
     if (isMovieChar) {
-      // Full scan of nested_characters, including import placeholders (type=0).
       for (std::uint32_t cid = 0; cid < tableSize && ids.size() < kMaxFallbackChildren; ++cid) {
         if (cid == charId) continue;
-        const std::uint8_t t = fallbackScanTable[cid].type;
-        if (t == 0 || t == 1 || t == 7 || t == 5 || t == 9)
-          ids.push_back(cid);
+        if (isVisualType(fallbackScanTable[cid].type)) addUnique(cid);
       }
+      // If this movie has an export name or action evidence, call it medium
+      if (reconConf == ReconConf::Weak && (!exportName.empty() || hasInitActionFor))
+        reconConf = ReconConf::Medium;
     } else {
-      // Proximity window: [charId+1, charId+kProximityWindow).
       const std::uint32_t wEnd = std::min(tableSize, charId + 1 + kProximityWindow);
       for (std::uint32_t cid = charId + 1; cid < wEnd; ++cid) {
-        const std::uint8_t t = fallbackScanTable[cid].type;
-        if (t == 0 || t == 1 || t == 7 || t == 5 || t == 9)
-          ids.push_back(cid);
+        if (isVisualType(fallbackScanTable[cid].type)) addUnique(cid);
       }
-      // Fallback: if proximity produced nothing, try root-level exported chars.
-      if (ids.empty() && m_currentAptFile) {
+
+      // ── Tier 5: Sprite with no proximity hits → try root-level exports ──
+      if (ids.size() == afterActionTiers && m_currentAptFile) {
         for (const auto& exp : m_currentAptFile->exports) {
           const std::uint32_t ecid = exp.character;
           if (ecid == charId || ecid >= tableSize) continue;
-          const std::uint8_t t = fallbackScanTable[ecid].type;
-          if (t == 0 || t == 1 || t == 7 || t == 5 || t == 9) {
-            if (std::find(ids.begin(), ids.end(), ecid) == ids.end())
-              ids.push_back(ecid);
-          }
+          if (isVisualType(fallbackScanTable[ecid].type)) addUnique(ecid);
           if (ids.size() >= kMaxFallbackChildren) break;
         }
       }
     }
 
-    // Action-evidence prioritization: if any action string matches an export or
-    // import name, move that character to the front of the candidate list.
-    if (!actionHints.strings.empty() && m_currentAptFile) {
-      std::vector<std::uint32_t> priorityIds;
-      for (const auto& s : actionHints.strings) {
-        for (const auto& exp : m_currentAptFile->exports) {
-          if (exp.name == s && exp.character != charId && exp.character < tableSize) {
-            if (std::find(priorityIds.begin(), priorityIds.end(), exp.character) == priorityIds.end())
-              priorityIds.push_back(exp.character);
-          }
-        }
-        for (const auto& imp : m_currentAptFile->imports) {
-          if (imp.name == s && imp.character != charId && imp.character < tableSize) {
-            if (std::find(priorityIds.begin(), priorityIds.end(), imp.character) == priorityIds.end())
-              priorityIds.push_back(imp.character);
-          }
-        }
-      }
-      if (!priorityIds.empty()) {
-        for (const auto pid : ids)
-          if (std::find(priorityIds.begin(), priorityIds.end(), pid) == priorityIds.end())
-            priorityIds.push_back(pid);
-        ids = std::move(priorityIds);
-        if (ids.size() > kMaxFallbackChildren) ids.resize(kMaxFallbackChildren);
-      }
-    }
-
+    if (ids.size() > kMaxFallbackChildren) ids.resize(kMaxFallbackChildren);
     return ids;
   };
 
@@ -6807,11 +7017,15 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
   // A→B→A loops that the depth guard alone cannot distinguish.
   thread_local static std::unordered_set<std::uint32_t> s_runtimeActivePath;
 
-  // ── Helper: draw the "RUNTIME M#X / S#X [annot]" dashed outline ──────────
+  // ── Helper: draw the "RUNTIME M#X / S#X [annot][conf]" dashed outline ──────
   const QColor rCol = isMovieChar ? QColor(255, 100, 60, 220) : QColor(255, 160, 60, 220);
   auto drawRuntimeOutline = [&]() {
-    const QString rLbl = QString("RUNTIME %1#%2%3")
-        .arg(QLatin1Char(charTypeTag)).arg(charId).arg(annot);
+    // Confidence suffix added after candidate collection (reconConf is set by collectCandidates).
+    const QString confTag = (reconConf == ReconConf::Strong)  ? QStringLiteral("[strong]")
+                          : (reconConf == ReconConf::Medium)  ? QStringLiteral("[export]")
+                                                              : QStringLiteral("[heuristic]");
+    const QString rLbl = QString("RUNTIME %1#%2%3%4")
+        .arg(QLatin1Char(charTypeTag)).arg(charId).arg(annot).arg(confTag);
     const QPen   rPen  (rCol, 1.5, Qt::DashLine);
     const QBrush rBrush(QColor(rCol.red(), rCol.green(), rCol.blue(), 12));
     const QPointF origin = parentTransform.map(QPointF(0.0, 0.0));
@@ -6879,19 +7093,59 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     }
 
     const std::vector<std::uint32_t> visualIds = collectCandidates();
+    // reconConf is now set by collectCandidates
 
     if (lg) {
-      lg->debug("[APT] {}runtime container charId={} type={}{}",
-                indent.toStdString(), charId, charTypeName, annot.toStdString());
-      lg->debug("[APT] {}{}", indent.toStdString(), stage);
-      if (!actionHints.strings.empty()) {
-        std::string slist;
-        for (const auto& s : actionHints.strings) { slist += '"'; slist += s; slist += "\" "; }
-        lg->debug("[APT] {}action strings: {}", indent.toStdString(), slist);
+      const char* confStr = (reconConf == ReconConf::Strong) ? "strong"
+                          : (reconConf == ReconConf::Medium) ? "export/table"
+                                                             : "heuristic";
+      lg->debug("[APT] {}runtime container charId={} type={}{} confidence={}",
+                indent.toStdString(), charId, charTypeName, annot.toStdString(), confStr);
+      lg->debug("[APT] {}  stage: {}", indent.toStdString(), stage);
+      lg->debug("[APT] {}  opcodes={} strings={} likely_attach={} detected_calls={}",
+                indent.toStdString(),
+                actionHints.opcode_count, actionHints.strings.size(),
+                actionHints.likely_attach_movie ? "yes" : "no",
+                actionHints.detected_calls.size());
+      if (!actionHints.detected_calls.empty()) {
+        for (const auto& dc : actionHints.detected_calls) {
+          std::string args;
+          for (std::size_t ai = 0; ai < dc.arg_strings.size(); ++ai) {
+            if (ai) args += ", ";
+            args += "\"" + dc.arg_strings[ai] + "\"";
+          }
+          lg->debug("[APT] {}    call \"{}\"({}) pool={}",
+                    indent.toStdString(), dc.call_name, args, dc.from_pool ? "yes" : "no");
+        }
       }
-      lg->debug("[APT] {}fallback child count={}", indent.toStdString(), visualIds.size());
+      if (!actionHints.strings.empty()) {
+        // Log each string with its role and classification
+        for (const auto& as : actionHints.strings) {
+          const char* roleStr =
+              (as.role == gf::apt::AptStringRole::PushLiteral)  ? "push"
+            : (as.role == gf::apt::AptStringRole::VarName)      ? "var"
+            : (as.role == gf::apt::AptStringRole::MemberName)   ? "member"
+            : (as.role == gf::apt::AptStringRole::TargetPath)   ? "target"
+            : (as.role == gf::apt::AptStringRole::FrameLabel)   ? "label"
+            : (as.role == gf::apt::AptStringRole::UrlTarget)    ? "url"
+            : (as.role == gf::apt::AptStringRole::FunctionName) ? "func"
+            : "?";
+          const AptStrSem sem = classifyStr(as);
+          const char* semStr =
+              (sem == AptStrSem::VisualSymbol)  ? "VisualSymbol"
+            : (sem == AptStrSem::ImportSymbol)  ? "ImportSymbol"
+            : (sem == AptStrSem::LikelySymbol)  ? "LikelySymbol"
+            : (sem == AptStrSem::LikelyVisual)  ? "LikelyVisual"
+            : (sem == AptStrSem::ScriptNoise)   ? "Noise"
+            : "Unknown";
+          lg->debug("[APT] {}    str \"{}\" role={} near_call={} sem={}",
+                    indent.toStdString(), as.value, roleStr,
+                    as.near_call ? "yes" : "no", semStr);
+        }
+      }
+      lg->debug("[APT] {}  fallback candidates={}", indent.toStdString(), visualIds.size());
       if (visualIds.size() >= kMaxFallbackChildren)
-        lg->debug("[APT] {}fallback candidate list capped at {}", indent.toStdString(), kMaxFallbackChildren);
+        lg->debug("[APT] {}  candidate list capped at {}", indent.toStdString(), kMaxFallbackChildren);
     }
     if (visualIds.empty()) return false;
 

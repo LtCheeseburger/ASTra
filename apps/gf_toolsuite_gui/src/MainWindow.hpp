@@ -293,6 +293,9 @@ private:
   QLabel* m_aptCharTypeLabel = nullptr;
   QLabel* m_aptCharSigLabel = nullptr;
   QLabel* m_aptCharOffsetLabel = nullptr;
+  QLabel* m_aptCharFrameCountLabel = nullptr;  // frame count (Sprite/Movie only)
+  QLabel* m_aptCharBoundsLabel = nullptr;      // LTRB bounds if present
+  QLabel* m_aptCharImportLabel = nullptr;      // import resolution for type=0 slots
   // Page 5: Frame info (read-only)
   QWidget* m_aptFramePage = nullptr;
   QLabel* m_aptFrameItemCountLabel = nullptr;
