@@ -23,6 +23,9 @@ set(GF_TOOLS_GUI_SOURCES
   src/AddGameDialog.cpp
   src/GamePlatform.cpp
   src/GameIconProvider.cpp
+  src/apt_editor/AptPreviewScene.cpp
+  src/apt_editor/AptPreviewItem.cpp
+  src/apt_editor/AptSelectionManager.cpp
 )
 
 set(GF_TOOLS_GUI_HEADERS
@@ -37,6 +40,9 @@ set(GF_TOOLS_GUI_HEADERS
   src/TextEditorWindow.hpp
   src/TextSyntaxHighlighter.hpp
   src/DocumentLifecycle.hpp
+  src/apt_editor/AptPreviewScene.hpp
+  src/apt_editor/AptPreviewItem.hpp
+  src/apt_editor/AptSelectionManager.hpp
 )
 
 set(GF_TOOLS_GUI_RESOURCES
@@ -62,6 +68,7 @@ target_include_directories(gf_toolsuite_gui PRIVATE
   ${CMAKE_SOURCE_DIR}/libs/gf_core/include
   ${CMAKE_SOURCE_DIR}/libs/gf_models/include
   ${CMAKE_SOURCE_DIR}/libs/gf_apt/include
+  ${CMAKE_SOURCE_DIR}/libs/gf_dat/include
   /libs/gf_platform_ps3/include
   /libs/gf_textures/include
 )
@@ -73,6 +80,7 @@ target_link_libraries(gf_toolsuite_gui PRIVATE
   gf_platform_ps3
   gf_textures
   gf_apt
+  gf_dat
 )
 
 # Warnings (from root cmake/gf_warnings.cmake)

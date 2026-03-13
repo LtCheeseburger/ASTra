@@ -42,6 +42,16 @@ struct AptColorTransform {
   double add_a = 0.0;
 };
 
+enum class AptFrameItemKind : std::uint8_t {
+  Unknown = 0,
+  Action = 1,
+  FrameLabel = 2,
+  PlaceObject = 3,
+  RemoveObject = 4,
+  BackgroundColor = 5,
+  InitAction = 8,
+};
+
 struct AptPlacement {
   std::uint32_t depth = 0;
   std::uint32_t character = 0;
@@ -52,12 +62,23 @@ struct AptPlacement {
   std::uint64_t offset = 0;
 };
 
+struct AptFrameItem {
+  AptFrameItemKind kind = AptFrameItemKind::Unknown;
+  std::uint64_t offset = 0;
+  AptPlacement placement;          // valid for PlaceObject
+  std::uint32_t remove_depth = 0;  // valid for RemoveObject
+  std::uint32_t background_rgba = 0;
+  std::uint32_t init_sprite = 0;
+  std::string label;               // valid for FrameLabel
+};
+
 struct AptFrame {
   std::uint32_t index = 0;
   std::uint32_t frameitemcount = 0;
   std::uint64_t offset = 0;
   std::uint64_t items_offset = 0;
   std::vector<AptPlacement> placements;
+  std::vector<AptFrameItem> items;
 };
 
 struct AptBounds {
@@ -143,5 +164,8 @@ std::optional<AptFile> read_apt_file(const std::string& apt_path,
 std::optional<AptSummary> read_apt_summary(const std::string& apt_path,
                                           const std::string& const_path,
                                           std::string* err);
+
+[[nodiscard]] AptFrame build_display_list_frame(const std::vector<AptFrame>& timeline_frames,
+                                                std::size_t frame_index);
 
 } // namespace gf::apt

@@ -445,4 +445,5 @@ D:/source/ASTra/out-win/apps/gf_toolsuite_gui/gf_toolsuite_gui_autogen/UVLADIE3J
   D:/source/ASTra/apps/gf_toolsuite_gui/src/NameCache.hpp \
   D:/source/ASTra/libs/gf_apt/include/gf/apt/apt_reader.hpp \
   D:/source/ASTra/libs/gf_core/include/gf/core/AstContainerEditor.hpp \
+  D:/source/ASTra/libs/gf_dat/include/gf/dat/dat_reader.hpp \
   D:/source/ASTra/libs/gf_models/include/gf/models/rsf.hpp

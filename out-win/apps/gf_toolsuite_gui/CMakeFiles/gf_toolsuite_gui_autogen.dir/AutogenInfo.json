@@ -336,6 +336,24 @@
 			"Mu",
 			"UVLADIE3JM/moc_TextSyntaxHighlighter.cpp",
 			null
+		],
+		[
+			"D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewItem.hpp",
+			"Mu",
+			"SMKB3QNXRM/moc_AptPreviewItem.cpp",
+			null
+		],
+		[
+			"D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewScene.hpp",
+			"Mu",
+			"SMKB3QNXRM/moc_AptPreviewScene.cpp",
+			null
+		],
+		[
+			"D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptSelectionManager.hpp",
+			"Mu",
+			"SMKB3QNXRM/moc_AptSelectionManager.cpp",
+			null
 		]
 	],
 	"HEADER_EXTENSIONS" : [ "h", "hh", "h++", "hm", "hpp", "hxx", "in", "txx" ],
@@ -374,6 +392,7 @@
 		"D:/source/ASTra/libs/gf_core/include",
 		"D:/source/ASTra/libs/gf_models/include",
 		"D:/source/ASTra/libs/gf_apt/include",
+		"D:/source/ASTra/libs/gf_dat/include",
 		"/libs/gf_platform_ps3/include",
 		"/libs/gf_textures/include",
 		"D:/source/ASTra/out-win/_deps/spdlog-src/include",
@@ -476,6 +495,21 @@
 		],
 		[
 			"D:/source/ASTra/apps/gf_toolsuite_gui/src/TextSyntaxHighlighter.cpp",
+			"Mu",
+			null
+		],
+		[
+			"D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewItem.cpp",
+			"Mu",
+			null
+		],
+		[
+			"D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewScene.cpp",
+			"Mu",
+			null
+		],
+		[
+			"D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptSelectionManager.cpp",
 			"Mu",
 			null
 		],

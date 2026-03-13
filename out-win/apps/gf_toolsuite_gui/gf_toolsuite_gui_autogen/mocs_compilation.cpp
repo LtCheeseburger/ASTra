@@ -5,3 +5,6 @@
 #include "UVLADIE3JM/moc_MainWindow.cpp"
 #include "UVLADIE3JM/moc_TextEditorWindow.cpp"
 #include "UVLADIE3JM/moc_TextSyntaxHighlighter.cpp"
+#include "SMKB3QNXRM/moc_AptPreviewItem.cpp"
+#include "SMKB3QNXRM/moc_AptPreviewScene.cpp"
+#include "SMKB3QNXRM/moc_AptSelectionManager.cpp"

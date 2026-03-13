@@ -12,6 +12,7 @@
 #include <gf/models/rsf.hpp>
 #include <gf/core/AstContainerEditor.hpp>
 #include <gf/apt/apt_reader.hpp>
+#include <gf/dat/dat_reader.hpp>
 #include <memory>
 
 class QTreeWidget;
@@ -36,6 +37,13 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QGraphicsView;
 class QGraphicsScene;
+class QCheckBox;
+class QTransform;
+
+namespace gf::gui::apt_editor {
+class AptPreviewScene;
+class AptSelectionManager;
+}
 
 namespace gf::gui {
 
@@ -145,6 +153,11 @@ private:
   // APT property editor helpers (v0.8.4)
   void syncAptPropEditorFromItem(QTreeWidgetItem* item);
   void refreshAptPreview();
+  void syncAptEditorSceneContext();
+  void onAptSceneSelectionChanged(int placementIndex);
+  void onAptScenePlacementEdited(int placementIndex, bool interactive);
+  void refreshAptPlacementTreeLabels();
+  QTreeWidgetItem* findAptPlacementTreeItem(int ownerKind, int ownerIndex, int frameIndex, int placementIndex) const;
   void renderAptFrameToScene(const gf::apt::AptFrame* frame,
                              int highlightedPlacementIndex = -1,
                              const std::vector<gf::apt::AptCharacter>* characterTable = nullptr,
@@ -152,6 +165,41 @@ private:
                              bool fitToContent = false);
   std::optional<int> selectedAptFrameIndex() const;
   std::optional<int> selectedAptPlacementIndex() const;
+
+  // APT display-list diagnostics
+  // Returns a formatted human-readable dump of the cumulative display list at frameIndex.
+  QString buildDlSummaryText(const std::vector<gf::apt::AptFrame>& frames,
+                             std::size_t frameIndex,
+                             const QString& contextLabel) const;
+
+  // DAT geometry preview
+  void renderDatImageToScene(int imageIndex);
+  // Lookup a DAT image by charId in the currently loaded DAT file.
+  // Returns nullptr if no DAT is loaded or no entry matches.
+  const gf::dat::DatImage* findDatImageByCharId(std::uint32_t charId) const noexcept;
+  // Render DAT geometry triangles into an arbitrary scene using a given world transform.
+  // Used for the APT->DAT fallback path. debugOverlay adds a "DAT fallback" label.
+  void renderDatGeometryToAptScene(const gf::dat::DatImage& img,
+                                   const QTransform& worldTransform,
+                                   QGraphicsScene* scene,
+                                   bool debugOverlay) const;
+
+  void renderAptCharacterRecursive(std::uint32_t charId,
+                                   const QTransform& parentTransform,
+                                   const std::vector<gf::apt::AptCharacter>& characterTable,
+                                   int rootPlacementIndex,
+                                   int highlightRootPlacementIdx,
+                                   bool debugOverlay,
+                                   int recursionDepth,
+                                   const QString& parentChainLabel);
+  void renderAptResolvedFrameRecursive(const gf::apt::AptFrame& resolvedFrame,
+                                       const QTransform& parentTransform,
+                                       const std::vector<gf::apt::AptCharacter>& characterTable,
+                                       int rootPlacementIndex,
+                                       int highlightRootPlacementIdx,
+                                       bool debugOverlay,
+                                       int recursionDepth,
+                                       const QString& parentChainLabel);
 
   QLabel* m_header = nullptr;
   QLineEdit* m_search = nullptr;
@@ -214,8 +262,10 @@ private:
   QStackedWidget* m_aptPropStack = nullptr;
   QWidget* m_aptRightPane = nullptr;
   QGraphicsView* m_aptPreviewView = nullptr;
-  QGraphicsScene* m_aptPreviewScene = nullptr;
+  gf::gui::apt_editor::AptPreviewScene* m_aptPreviewScene = nullptr;
+  gf::gui::apt_editor::AptSelectionManager* m_aptSelectionManager = nullptr;
   QAction* m_aptDebugAction = nullptr;
+  QLabel* m_aptDlStatusLabel = nullptr; // frame+DL summary shown below the preview
   // Page 0: plain text details (fallback / group / slice nodes)
   QPlainTextEdit* m_aptDetails = nullptr;
   // Page 1: Summary editor
@@ -247,6 +297,7 @@ private:
   QWidget* m_aptFramePage = nullptr;
   QLabel* m_aptFrameItemCountLabel = nullptr;
   QLabel* m_aptFrameItemsOffsetLabel = nullptr;
+  QPlainTextEdit* m_aptFrameDlDump = nullptr; // cumulative display-list dump for selected frame
   // Page 6: Placement editor
   QWidget* m_aptPlacementPage = nullptr;
   QSpinBox* m_aptPlacementDepthSpin = nullptr;
@@ -278,6 +329,11 @@ private:
   // APT save/export toolbar actions
   QAction* m_aptSaveAction = nullptr;
   QAction* m_aptExportAction = nullptr;
+  QAction* m_aptBringForwardAction = nullptr;
+  QAction* m_aptSendBackwardAction = nullptr;
+  QAction* m_aptAddPlacementAction = nullptr;
+  QAction* m_aptRemovePlacementAction = nullptr;
+  QAction* m_aptDuplicatePlacementAction = nullptr;
 
   // APT save context (set by loadAptForItem, cleared by clearAptViewer)
   bool m_aptIsEmbedded = false;
@@ -285,6 +341,17 @@ private:
   int m_aptSaveAptEntryIdx = -1;
   int m_aptSaveConstEntryIdx = -1;
   QString m_aptSaveOuterPath;
+
+  // DAT viewer tab
+  QWidget*        m_datTab               = nullptr;
+  QLabel*         m_datSummaryLabel      = nullptr;
+  QTableWidget*   m_datImagesTable       = nullptr;
+  QGraphicsView*  m_datPreviewView       = nullptr;
+  QGraphicsScene* m_datPreviewScene      = nullptr;
+  QLabel*         m_datEntryInfoLabel    = nullptr;
+  QLabel*         m_datCorrelLabel       = nullptr;
+  QCheckBox*      m_datApplyTransformCheck = nullptr;
+  std::optional<gf::dat::DatFile> m_currentDatFile;
 
   QWidget* m_rsfTab = nullptr;
   QLabel* m_rsfNameValue = nullptr;

@@ -7,6 +7,7 @@ add_executable(gf_tests
   test_scan_heuristics.cpp
   test_ast_container_editor.cpp
   test_apt_transform.cpp
+  test_apt_display_list.cpp
 )
 
 target_link_libraries(gf_tests PRIVATE

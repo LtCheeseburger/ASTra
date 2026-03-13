@@ -1549,7 +1549,7 @@ void GameSelectorWindow::onAbout() {
   text += "• RSF tab: binary RSF tables, XML RSF/state detection, and in-place RSF editing\n";
   text += "• Export/import: RSF keeps .rsf, P3R exports as DDS, DDS→P3R auto-convert on replace\n";
   text += "• Quality-of-life: cached file icons, auto-expanded AST entries, backup-aware writes, and trimmed context menu\n\n";
-  text += "This is the finalized v0.8.0 Private Beta build.";
+  text += "Currently undergoing 0.8.4 Alpha.";
   box.setText(text);
   QPixmap logo(":/branding/astra_logo.png");
   if (!logo.isNull()) {

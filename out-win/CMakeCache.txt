@@ -702,6 +702,15 @@ gf_apt_IS_TOP_LEVEL:STATIC=OFF
 gf_apt_SOURCE_DIR:STATIC=D:/source/ASTra/libs/gf_apt
 
 //Value Computed by CMake
+gf_dat_BINARY_DIR:STATIC=D:/source/ASTra/out-win/libs/gf_dat
+
+//Value Computed by CMake
+gf_dat_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+gf_dat_SOURCE_DIR:STATIC=D:/source/ASTra/libs/gf_dat
+
+//Value Computed by CMake
 gf_toolsuite_gui_BINARY_DIR:STATIC=D:/source/ASTra/out-win/apps/gf_toolsuite_gui
 
 //Value Computed by CMake
@@ -955,7 +964,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=16
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=17
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP

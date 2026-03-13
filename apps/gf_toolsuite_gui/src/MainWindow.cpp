@@ -71,6 +71,7 @@
 #include <QStackedWidget>
 #include <QGraphicsView>
 #include <QGraphicsScene>
+#include <QCheckBox>
 #include <QGraphicsRectItem>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsLineItem>
@@ -79,6 +80,8 @@
 #include <QPainter>
 
 #include "GuiSettings.hpp"
+#include "apt_editor/AptPreviewScene.hpp"
+#include "apt_editor/AptSelectionManager.hpp"
 
 // APT tree item node-type roles (stored in kAptRoleNodeType / +11)
 static constexpr int kAptNodePlain     = 0; // group/root/fallback
@@ -1723,6 +1726,60 @@ textTab->addAction(m_textSaveShortcutAction);
 
   m_aptToolbar->addSeparator();
 
+  m_aptBringForwardAction = m_aptToolbar->addAction("Bring Forward");
+  m_aptBringForwardAction->setToolTip("Increase placement order/depth in the current frame");
+  connect(m_aptBringForwardAction, &QAction::triggered, this, [this]() {
+    if (m_aptPreviewScene && m_aptPreviewScene->bringSelectionForward()) {
+      refreshAptPlacementTreeLabels();
+      m_aptDirty = true;
+      setDirty(true);
+      refreshAptPreview();
+    }
+  });
+
+  m_aptSendBackwardAction = m_aptToolbar->addAction("Send Backward");
+  m_aptSendBackwardAction->setToolTip("Decrease placement order/depth in the current frame");
+  connect(m_aptSendBackwardAction, &QAction::triggered, this, [this]() {
+    if (m_aptPreviewScene && m_aptPreviewScene->sendSelectionBackward()) {
+      refreshAptPlacementTreeLabels();
+      m_aptDirty = true;
+      setDirty(true);
+      refreshAptPreview();
+    }
+  });
+
+  m_aptAddPlacementAction = m_aptToolbar->addAction("Add Placement");
+  connect(m_aptAddPlacementAction, &QAction::triggered, this, [this]() {
+    if (m_aptPreviewScene && m_aptPreviewScene->addPlacement()) {
+      refreshAptPlacementTreeLabels();
+      m_aptDirty = true;
+      setDirty(true);
+      refreshAptPreview();
+    }
+  });
+
+  m_aptDuplicatePlacementAction = m_aptToolbar->addAction("Duplicate");
+  connect(m_aptDuplicatePlacementAction, &QAction::triggered, this, [this]() {
+    if (m_aptPreviewScene && m_aptPreviewScene->duplicateSelection()) {
+      refreshAptPlacementTreeLabels();
+      m_aptDirty = true;
+      setDirty(true);
+      refreshAptPreview();
+    }
+  });
+
+  m_aptRemovePlacementAction = m_aptToolbar->addAction("Remove");
+  connect(m_aptRemovePlacementAction, &QAction::triggered, this, [this]() {
+    if (m_aptPreviewScene && m_aptPreviewScene->removeSelection()) {
+      refreshAptPlacementTreeLabels();
+      m_aptDirty = true;
+      setDirty(true);
+      refreshAptPreview();
+    }
+  });
+
+  m_aptToolbar->addSeparator();
+
   m_aptDebugAction = m_aptToolbar->addAction("Debug Overlay");
   m_aptDebugAction->setCheckable(true);
   m_aptDebugAction->setChecked(false);
@@ -1749,7 +1806,11 @@ textTab->addAction(m_textSaveShortcutAction);
   aptRightLayout->setContentsMargins(0, 0, 0, 0);
   aptRightLayout->setSpacing(6);
 
-  m_aptPreviewScene = new QGraphicsScene(m_aptRightPane);
+  m_aptSelectionManager = new gf::gui::apt_editor::AptSelectionManager(m_aptRightPane);
+  m_aptPreviewScene = new gf::gui::apt_editor::AptPreviewScene(m_aptRightPane);
+  m_aptPreviewScene->setSelectionManager(m_aptSelectionManager);
+  m_aptPreviewScene->onPlacementSelected = [this](int placementIndex) { onAptSceneSelectionChanged(placementIndex); };
+  m_aptPreviewScene->onPlacementEdited = [this](int placementIndex, bool interactive) { onAptScenePlacementEdited(placementIndex, interactive); };
   m_aptPreviewView = new AptPreviewView(m_aptRightPane);
   m_aptPreviewView->setScene(m_aptPreviewScene);
   m_aptPreviewView->setRenderHint(QPainter::Antialiasing, true);
@@ -1759,6 +1820,13 @@ textTab->addAction(m_textSaveShortcutAction);
   m_aptPreviewView->setFrameShape(QFrame::StyledPanel);
   m_aptPreviewView->setBackgroundBrush(QBrush(QColor(24, 24, 28)));
   aptRightLayout->addWidget(m_aptPreviewView, 3);
+
+  // Display-list status bar: always visible below the preview.
+  m_aptDlStatusLabel = new QLabel(m_aptRightPane);
+  m_aptDlStatusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  m_aptDlStatusLabel->setFont(mono);
+  m_aptDlStatusLabel->setText("(no APT loaded)");
+  aptRightLayout->addWidget(m_aptDlStatusLabel, 0);
 
   m_aptPropStack = new QStackedWidget(m_aptRightPane);
   aptRightLayout->addWidget(m_aptPropStack, 2);
@@ -1862,6 +1930,15 @@ textTab->addAction(m_textSaveShortcutAction);
     m_aptFrameItemsOffsetLabel = makeReadLabel(page);
     form->addRow("Item Count",    m_aptFrameItemCountLabel);
     form->addRow("Items Offset",  m_aptFrameItemsOffsetLabel);
+
+    // Cumulative display-list dump for this frame (populated by syncAptPropEditorFromItem).
+    m_aptFrameDlDump = new QPlainTextEdit();
+    m_aptFrameDlDump->setReadOnly(true);
+    m_aptFrameDlDump->setFont(mono);
+    m_aptFrameDlDump->setMinimumHeight(100);
+    m_aptFrameDlDump->setMaximumHeight(240);
+    m_aptFrameDlDump->setPlaceholderText("(cumulative display list will appear here)");
+    form->addRow("Display List", m_aptFrameDlDump);
   }
 
   // Page 6 — Placement editor
@@ -1930,6 +2007,7 @@ textTab->addAction(m_textSaveShortcutAction);
 
   connect(m_aptTree, &QTreeWidget::currentItemChanged, this,
           [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
+            if (m_suppressSelectionChange) return;
             syncAptPropEditorFromItem(current);
             refreshAptPreview();
           });
@@ -2036,6 +2114,90 @@ textTab->addAction(m_textSaveShortcutAction);
     applyRsfChanges();
   });
 
+  // --- DAT tab ---
+  m_datTab = new QWidget(m_viewerHost);
+  auto* datOuterLayout = new QVBoxLayout(m_datTab);
+  datOuterLayout->setContentsMargins(6, 6, 6, 6);
+  datOuterLayout->setSpacing(4);
+
+  // File-level summary (images count, file length, etc.)
+  m_datSummaryLabel = new QLabel(m_datTab);
+  m_datSummaryLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  datOuterLayout->addWidget(m_datSummaryLabel, 0);
+
+  // Horizontal splitter: left = image list, right = geometry preview
+  auto* datSplit = new QSplitter(Qt::Horizontal, m_datTab);
+
+  // --- Left: image table ---
+  m_datImagesTable = new QTableWidget(datSplit);
+  m_datImagesTable->setColumnCount(7);
+  m_datImagesTable->setHorizontalHeaderLabels(QStringList()
+      << "#" << "CharId" << "RGBA" << "OffsetX" << "OffsetY" << "Triangles" << "FileOff");
+  m_datImagesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+  m_datImagesTable->setSelectionMode(QAbstractItemView::SingleSelection);
+  m_datImagesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  m_datImagesTable->verticalHeader()->setVisible(false);
+  m_datImagesTable->horizontalHeader()->setStretchLastSection(true);
+  m_datImagesTable->setMinimumWidth(220);
+
+  // --- Right: per-entry info + geometry preview ---
+  auto* datRight = new QWidget(datSplit);
+  auto* datRightLayout = new QVBoxLayout(datRight);
+  datRightLayout->setContentsMargins(0, 0, 0, 0);
+  datRightLayout->setSpacing(4);
+
+  m_datEntryInfoLabel = new QLabel(datRight);
+  m_datEntryInfoLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  m_datEntryInfoLabel->setWordWrap(true);
+  m_datEntryInfoLabel->setText("(select a row to preview)");
+  datRightLayout->addWidget(m_datEntryInfoLabel, 0);
+
+  // Transform toggle row
+  auto* datTransformRow = new QWidget(datRight);
+  auto* datTransformLayout = new QHBoxLayout(datTransformRow);
+  datTransformLayout->setContentsMargins(0, 0, 0, 0);
+  m_datApplyTransformCheck = new QCheckBox("Apply DAT transform (matrix + offset)", datTransformRow);
+  m_datApplyTransformCheck->setToolTip(
+      "When checked, vertex coordinates are transformed by the DAT image matrix and offset.\n"
+      "The DAT transform positions the shape in the APT/Flash coordinate system.\n"
+      "Warning: coordinate scale/units are reverse-engineered; results may vary.");
+  datTransformLayout->addWidget(m_datApplyTransformCheck);
+  datTransformLayout->addStretch(1);
+  datRightLayout->addWidget(datTransformRow, 0);
+
+  m_datPreviewScene = new QGraphicsScene(datRight);
+  m_datPreviewView  = new QGraphicsView(m_datPreviewScene, datRight);
+  m_datPreviewView->setRenderHint(QPainter::Antialiasing, true);
+  m_datPreviewView->setDragMode(QGraphicsView::ScrollHandDrag);
+  m_datPreviewView->setAlignment(Qt::AlignCenter);
+  m_datPreviewView->setBackgroundBrush(QBrush(QColor(20, 20, 24)));
+  m_datPreviewView->setFrameShape(QFrame::StyledPanel);
+  m_datPreviewView->setMinimumHeight(200);
+  datRightLayout->addWidget(m_datPreviewView, 1);
+
+  m_datCorrelLabel = new QLabel(datRight);
+  m_datCorrelLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  m_datCorrelLabel->setWordWrap(true);
+  datRightLayout->addWidget(m_datCorrelLabel, 0);
+
+  datSplit->addWidget(m_datImagesTable);
+  datSplit->addWidget(datRight);
+  datSplit->setStretchFactor(0, 2);
+  datSplit->setStretchFactor(1, 3);
+  datOuterLayout->addWidget(datSplit, 1);
+
+  // Connect row selection → preview update
+  connect(m_datImagesTable, &QTableWidget::itemSelectionChanged, this, [this]() {
+    if (!m_datImagesTable) return;
+    const int row = m_datImagesTable->currentRow();
+    renderDatImageToScene(row);
+  });
+  // Connect transform toggle → re-render current row
+  connect(m_datApplyTransformCheck, &QCheckBox::toggled, this, [this]() {
+    if (!m_datImagesTable) return;
+    renderDatImageToScene(m_datImagesTable->currentRow());
+  });
+
   m_viewTabs->addTab(m_hexView, "Hex");
   m_viewTabs->addTab(textTab, "Text");
   m_textTabIndex = m_viewTabs->indexOf(textTab);
@@ -2043,6 +2205,7 @@ textTab->addAction(m_textSaveShortcutAction);
   m_viewTabs->addTab(m_textureTab, "Texture");
   m_viewTabs->addTab(m_aptTab, "APT");
   m_viewTabs->addTab(m_rsfTab, "RSF");
+  m_viewTabs->addTab(m_datTab, "DAT");
 
   // Text tab helpers
   connect(m_textWrapAction, &QAction::toggled, this, [this](bool on) {
@@ -5307,7 +5470,10 @@ bool MainWindow::loadAptForItem(QTreeWidgetItem* item, QString* errorOut) {
 void MainWindow::clearAptViewer() {
   if (m_aptTree) m_aptTree->clear();
   if (m_aptDetails) m_aptDetails->clear();
-  if (m_aptPreviewScene) m_aptPreviewScene->clear();
+  if (m_aptDlStatusLabel) m_aptDlStatusLabel->setText("(no APT loaded)");
+  if (m_aptFrameDlDump) m_aptFrameDlDump->clear();
+  if (m_aptSelectionManager) m_aptSelectionManager->clearSelection();
+  if (m_aptPreviewScene) { m_aptPreviewScene->clearEditorOverlay(); m_aptPreviewScene->clear(); }
   m_currentAptFile.reset();
   m_aptDirty = false;
   m_aptUpdatingUi = false;
@@ -5322,6 +5488,11 @@ void MainWindow::clearAptViewer() {
   if (m_aptApplyAction)   m_aptApplyAction->setEnabled(false);
   if (m_aptSaveAction)    m_aptSaveAction->setEnabled(false);
   if (m_aptExportAction)  m_aptExportAction->setEnabled(false);
+  if (m_aptBringForwardAction) m_aptBringForwardAction->setEnabled(false);
+  if (m_aptSendBackwardAction) m_aptSendBackwardAction->setEnabled(false);
+  if (m_aptAddPlacementAction) m_aptAddPlacementAction->setEnabled(false);
+  if (m_aptRemovePlacementAction) m_aptRemovePlacementAction->setEnabled(false);
+  if (m_aptDuplicatePlacementAction) m_aptDuplicatePlacementAction->setEnabled(false);
   if (m_aptPrevFrameAction) m_aptPrevFrameAction->setEnabled(false);
   if (m_aptNextFrameAction) m_aptNextFrameAction->setEnabled(false);
   if (m_aptFrameSpin) {
@@ -5370,6 +5541,11 @@ bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QStrin
   }
   if (m_aptSaveAction)   m_aptSaveAction->setEnabled(true);
   if (m_aptExportAction) m_aptExportAction->setEnabled(true);
+  if (m_aptBringForwardAction) m_aptBringForwardAction->setEnabled(true);
+  if (m_aptSendBackwardAction) m_aptSendBackwardAction->setEnabled(true);
+  if (m_aptAddPlacementAction) m_aptAddPlacementAction->setEnabled(true);
+  if (m_aptRemovePlacementAction) m_aptRemovePlacementAction->setEnabled(true);
+  if (m_aptDuplicatePlacementAction) m_aptDuplicatePlacementAction->setEnabled(true);
 
   m_aptTree->setUpdatesEnabled(false);
 
@@ -5457,13 +5633,24 @@ bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QStrin
   framesNode->setData(0, kAptRoleNodeIndex, -1);
   for (std::size_t i = 0; i < file.frames.size(); ++i) {
     const auto& fr = file.frames[i];
-    const QString detail = QString("Type: Frame\nIndex: %1\nFrame Item Count: %2\nPlacement Count: %3\nItems Offset: 0x%4\nOffset: 0x%5")
+    // Extract FrameLabel if present (APT frames often have named labels).
+    QString frameLabel;
+    for (const auto& it : fr.items)
+      if (it.kind == gf::apt::AptFrameItemKind::FrameLabel && !it.label.empty()) {
+        frameLabel = QString::fromStdString(it.label);
+        break;
+      }
+    const QString frameName = frameLabel.isEmpty()
+        ? QString("Frame %1").arg(qulonglong(i))
+        : QString("Frame %1 \"%2\"").arg(qulonglong(i)).arg(frameLabel);
+    const QString detail = QString("Type: Frame\nIndex: %1\nLabel: %2\nFrame Item Count: %3\nPlacement Count: %4\nItems Offset: 0x%5\nOffset: 0x%6")
                                .arg(qulonglong(i))
+                               .arg(frameLabel.isEmpty() ? "(none)" : frameLabel)
                                .arg(fr.frameitemcount)
                                .arg(fr.placements.size())
                                .arg(QString::number(qulonglong(fr.items_offset), 16).toUpper())
                                .arg(QString::number(qulonglong(fr.offset), 16).toUpper());
-    auto* frameItem = addLeaf(framesNode, QString("Frame %1").arg(qulonglong(i)), QString::number(fr.frameitemcount), detail, kAptNodeFrame, static_cast<int>(i), 0, -1);
+    auto* frameItem = addLeaf(framesNode, frameName, QString::number(fr.frameitemcount), detail, kAptNodeFrame, static_cast<int>(i), 0, -1);
     for (std::size_t p = 0; p < fr.placements.size(); ++p) {
       const auto& pl = fr.placements[p];
       const QString plName = pl.instance_name.empty() ? QString("Placement %1").arg(qulonglong(p))
@@ -5503,14 +5690,24 @@ bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QStrin
       charFramesNode->setData(0, kAptRoleOwnerIndex, static_cast<int>(i));
       for (std::size_t fi = 0; fi < ch.frames.size(); ++fi) {
         const auto& fr = ch.frames[fi];
-        const QString frameDetail = QString("Type: Frame\nOwner: Character %1\nIndex: %2\nFrame Item Count: %3\nPlacement Count: %4\nItems Offset: 0x%5\nOffset: 0x%6")
+        QString chFrameLabel;
+        for (const auto& it : fr.items)
+          if (it.kind == gf::apt::AptFrameItemKind::FrameLabel && !it.label.empty()) {
+            chFrameLabel = QString::fromStdString(it.label);
+            break;
+          }
+        const QString chFrameName = chFrameLabel.isEmpty()
+            ? QString("Frame %1").arg(qulonglong(fi))
+            : QString("Frame %1 \"%2\"").arg(qulonglong(fi)).arg(chFrameLabel);
+        const QString frameDetail = QString("Type: Frame\nOwner: Character %1\nIndex: %2\nLabel: %3\nFrame Item Count: %4\nPlacement Count: %5\nItems Offset: 0x%6\nOffset: 0x%7")
                                         .arg(qulonglong(i))
                                         .arg(qulonglong(fi))
+                                        .arg(chFrameLabel.isEmpty() ? "(none)" : chFrameLabel)
                                         .arg(fr.frameitemcount)
                                         .arg(fr.placements.size())
                                         .arg(QString::number(qulonglong(fr.items_offset), 16).toUpper())
                                         .arg(QString::number(qulonglong(fr.offset), 16).toUpper());
-        auto* frameItem = addLeaf(charFramesNode, QString("Frame %1").arg(qulonglong(fi)), QString::number(fr.frameitemcount),
+        auto* frameItem = addLeaf(charFramesNode, chFrameName, QString::number(fr.frameitemcount),
                                   frameDetail, kAptNodeFrame, static_cast<int>(fi), 1, static_cast<int>(i));
         for (std::size_t p = 0; p < fr.placements.size(); ++p) {
           const auto& pl = fr.placements[p];
@@ -5612,139 +5809,564 @@ static QTransform transform2DToQt(const gf::apt::Transform2D& t) {
   );
 }
 
+// Recursively logs the sprite/movie sub-tree rooted at resolvedFrame.
+// Called only when spdlog debug logging is active (debug overlay mode).
+static void logAptSpriteTree(
+    const gf::apt::AptFile&                   aptFile,
+    const std::vector<gf::apt::AptCharacter>& table,
+    const gf::apt::AptFrame&                  resolvedFrame,
+    int                                        depth,
+    const std::shared_ptr<spdlog::logger>&     lg)
+{
+  if (depth > 8) return;
+  const std::string indent(static_cast<std::size_t>(depth) * 2, ' ');
+  for (const auto& pl : resolvedFrame.placements) {
+    if (pl.character >= table.size()) continue;
+    const auto& ch = table[pl.character];
+    if (ch.type != 5 && ch.type != 9) continue;  // only Sprite / Movie
+    const char* typeName = (ch.type == 9) ? "Movie" : "Sprite";
+    lg->debug("[APT] {}render charId={} type={} depth={}", indent, pl.character, typeName, pl.depth);
+    if (ch.frames.empty()) {
+      lg->debug("[APT] {}  {} has no frames (placeholder)", indent, typeName);
+      continue;
+    }
+    const std::vector<gf::apt::AptCharacter>& childTable =
+        (ch.type == 9 && !ch.nested_characters.empty()) ? ch.nested_characters : table;
+    const gf::apt::AptFrame childDl =
+        gf::apt::build_display_list_frame(ch.frames, 0);
+    lg->debug("[APT] {}  entering {} timeline frame=0 nodes={}", indent, typeName, childDl.placements.size());
+    logAptSpriteTree(aptFile, childTable, childDl, depth + 1, lg);
+  }
+  (void)aptFile; // reserved for future use (e.g. import resolution)
+}
+
 // Converts a flat RenderNode list (from gf::apt::renderAptFrame) into QGraphicsItems.
+static void drawRenderNodeToScene(
+    const gf::apt::RenderNode& node,
+    int highlightRootPlacementIdx,
+    bool debugOverlay,
+    QGraphicsScene* scene)
+{
+  const bool isHighlighted = (node.rootPlacementIndex == highlightRootPlacementIdx
+                              && highlightRootPlacementIdx >= 0);
+  const QString chainLabel = QString::fromStdString(node.parentChainLabel);
+  const int nestingDepth = chainLabel.count(QStringLiteral("→"));
+  const bool isRootLevel = (nestingDepth == 0);
+
+  if (node.kind == gf::apt::RenderNode::Kind::Unknown) {
+    const QTransform wt = transform2DToQt(node.worldTransform);
+    const QPointF origin = wt.map(QPointF(0.0, 0.0));
+    const QPen impPen(isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0, 200),
+                      isHighlighted ? 2.5 : 1.5, Qt::DashLine);
+    const QBrush impBrush(QColor(255, 140, 0, isHighlighted ? 40 : 18));
+    const QRectF impRect(0.0, 0.0, 100.0, 36.0);
+    auto* impItem = scene->addRect(impRect, impPen, impBrush);
+    impItem->setTransform(wt);
+    const QString name = node.instanceName.empty()
+        ? QString("C%1").arg(node.characterId)
+        : QString::fromStdString(node.instanceName);
+    auto* lbl = scene->addSimpleText(QString("IMPORT %1\nD%2").arg(name).arg(node.placementDepth));
+    lbl->setPos(origin.x() + 3.0, origin.y() + 3.0);
+    lbl->setBrush(QBrush(isHighlighted ? QColor(255, 210, 64) : QColor(255, 160, 50, 200)));
+    return;
+  }
+
+  if (node.kind == gf::apt::RenderNode::Kind::Sprite ||
+      node.kind == gf::apt::RenderNode::Kind::Movie) {
+    const bool isMovie = (node.kind == gf::apt::RenderNode::Kind::Movie);
+    const QTransform wt = transform2DToQt(node.worldTransform);
+    const QPointF origin = wt.map(QPointF(0.0, 0.0));
+    const QColor col = isHighlighted
+        ? QColor(255, 210,  64)
+        : isMovie ? QColor(100, 160, 255, 210)
+                  : QColor(255, 140,   0, 210);
+    const QString name = node.instanceName.empty()
+        ? (debugOverlay ? QString("S#%1").arg(node.characterId)
+                        : QString("C%1").arg(node.characterId))
+        : QString::fromStdString(node.instanceName);
+    const QString typeTag = isMovie ? "MOV" : "SPR";
+    QString lbl = QString("%1 %2\nD%3").arg(typeTag, name).arg(node.placementDepth);
+    if (debugOverlay && !chainLabel.isEmpty())
+      lbl += QStringLiteral("\n%1").arg(chainLabel);
+    const QPen   sprPen  (col, isHighlighted ? 2.0 : 1.5, Qt::DotLine);
+    const QBrush sprBrush(QColor(col.red(), col.green(), col.blue(),
+                                 isHighlighted ? 40 : 15));
+
+    bool drewRect = false;
+    if (node.localBounds) {
+      const gf::apt::AptBounds& b = *node.localBounds;
+      const qreal bw = static_cast<qreal>(b.right  - b.left);
+      const qreal bh = static_cast<qreal>(b.bottom - b.top);
+      if (bw > 0.0 && bh > 0.0) {
+        const QRectF boundsRect(static_cast<qreal>(b.left),
+                                static_cast<qreal>(b.top), bw, bh);
+        auto* bItem = scene->addRect(boundsRect, sprPen, sprBrush);
+        bItem->setTransform(wt);
+        const QPen xhPen(QColor(col.red(), col.green(), col.blue(), 160), 1.0);
+        scene->addLine(origin.x() - 4, origin.y(), origin.x() + 4, origin.y(), xhPen);
+        scene->addLine(origin.x(), origin.y() - 4, origin.x(), origin.y() + 4, xhPen);
+        const QPointF tl = wt.map(QPointF(b.left, b.top));
+        auto* lblItem = scene->addSimpleText(lbl);
+        lblItem->setPos(tl.x() + 3.0, tl.y() + 3.0);
+        lblItem->setBrush(QBrush(col));
+        drewRect = true;
+      }
+    }
+
+    if (!drewRect) {
+      const qreal r = isHighlighted ? 10.0 : 6.0;
+      QPolygonF diamond;
+      diamond << QPointF(0, -r) << QPointF(r, 0) << QPointF(0, r) << QPointF(-r, 0);
+      auto* diamItem = scene->addPolygon(
+          diamond,
+          QPen(col, isHighlighted ? 2.0 : 1.5),
+          QBrush(QColor(col.red(), col.green(), col.blue(), isHighlighted ? 60 : 25)));
+      diamItem->setPos(origin);
+      auto* lblItem = scene->addSimpleText(lbl);
+      lblItem->setPos(origin + QPointF(r + 2.0, -r));
+      lblItem->setBrush(QBrush(col));
+    }
+    return;
+  }
+
+  QRectF localRect;
+  if (node.localBounds) {
+    const gf::apt::AptBounds& b = *node.localBounds;
+    const qreal bw = static_cast<qreal>(b.right  - b.left);
+    const qreal bh = static_cast<qreal>(b.bottom - b.top);
+    if (bw > 0.0 && bh > 0.0)
+      localRect = QRectF(static_cast<qreal>(b.left), static_cast<qreal>(b.top), bw, bh);
+  }
+  if (!localRect.isValid() || localRect.width() < 1.0 || localRect.height() < 1.0)
+    localRect = QRectF(0.0, 0.0, 120.0, 48.0);
+
+  QPen pen;
+  QBrush brush;
+  if (isHighlighted) {
+    pen   = QPen(QColor(255, 210,  64), 3.0);
+    brush = QBrush(QColor(255, 210,  64, 70));
+  } else if (node.kind == gf::apt::RenderNode::Kind::Image) {
+    const int alpha = isRootLevel ? 220 : 160;
+    pen   = QPen(QColor(180, 120, 255, alpha), isRootLevel ? 2.0 : 1.0);
+    brush = QBrush(QColor(140,  80, 255, isRootLevel ? 55 : 25));
+  } else if (isRootLevel) {
+    pen   = QPen(QColor(140, 190, 255), 2.0);
+    brush = QBrush(QColor(100, 170, 255, 45));
+  } else {
+    pen   = QPen(QColor( 80, 210, 160, 180), 1.0);
+    brush = QBrush(QColor( 60, 180, 130,  25));
+  }
+
+  const QTransform wt = transform2DToQt(node.worldTransform);
+  auto* rectItem = scene->addRect(localRect, pen, brush);
+  rectItem->setTransform(wt);
+
+  if (isRootLevel || debugOverlay) {
+    const QString name = node.instanceName.empty()
+        ? QString("C%1").arg(node.characterId)
+        : QString::fromStdString(node.instanceName);
+    QString label = QString("%1\nD%2/C%3").arg(name).arg(node.placementDepth).arg(node.characterId);
+    if (debugOverlay && !chainLabel.isEmpty())
+      label += QString("\n%1").arg(chainLabel);
+    const QPointF anchor = wt.map(localRect.topLeft());
+    auto* textItem = scene->addSimpleText(label);
+    textItem->setPos(anchor.x() + 4.0, anchor.y() + 4.0);
+    textItem->setBrush(QBrush(isHighlighted ? QColor(255, 235, 120)
+                                            : (isRootLevel ? QColor(220, 230, 255)
+                                                           : QColor(180, 235, 205, 210))));
+  }
+}
+
 static void renderNodesToScene(
     const std::vector<gf::apt::RenderNode>& nodes,
     int highlightRootPlacementIdx,
     bool debugOverlay,
     QGraphicsScene* scene)
 {
-  for (const gf::apt::RenderNode& node : nodes) {
-    const bool isHighlighted = (node.rootPlacementIndex == highlightRootPlacementIdx
-                                && highlightRootPlacementIdx >= 0);
-    // Distinguish root-level vs nested: count "→" (UTF-8 E2 86 92) separators in the chain label.
-    const int nestingDepth = static_cast<int>(
-        std::count(node.parentChainLabel.begin(), node.parentChainLabel.end(), '\xE2'));
-    const bool isRootLevel = (nestingDepth == 0);
+  for (const gf::apt::RenderNode& node : nodes)
+    drawRenderNodeToScene(node, highlightRootPlacementIdx, debugOverlay, scene);
+}
 
-    // ── Import / unknown character placeholder ──────────────────────────────
-    // Shown when the character ID is not in the local table (runtime import).
-    if (node.kind == gf::apt::RenderNode::Kind::Unknown) {
-      const QTransform wt = transform2DToQt(node.worldTransform);
-      const QPointF origin = wt.map(QPointF(0.0, 0.0));
-      // Dashed orange border, semi-transparent fill.
-      const QPen impPen(isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0, 200),
-                        isHighlighted ? 2.5 : 1.5, Qt::DashLine);
-      const QBrush impBrush(QColor(255, 140, 0, isHighlighted ? 40 : 18));
-      const QRectF impRect(0.0, 0.0, 100.0, 36.0);
-      auto* impItem = scene->addRect(impRect, impPen, impBrush);
-      impItem->setTransform(wt);
-      const QString name = node.instanceName.empty()
-          ? QString("C%1").arg(node.characterId)
-          : QString::fromStdString(node.instanceName);
-      auto* lbl = scene->addSimpleText(QString("IMPORT %1\nD%2").arg(name).arg(node.placementDepth));
-      lbl->setPos(origin.x() + 3.0, origin.y() + 3.0);
-      lbl->setBrush(QBrush(isHighlighted ? QColor(255, 210, 64) : QColor(255, 160, 50, 200)));
+// ---------------------------------------------------------------------------
+// DAT resolver + APT fallback renderer
+// ---------------------------------------------------------------------------
+
+QString MainWindow::buildDlSummaryText(const std::vector<gf::apt::AptFrame>& frames,
+                                       std::size_t frameIndex,
+                                       const QString& contextLabel) const
+{
+  QStringList lines;
+  lines << QStringLiteral("Context: %1").arg(contextLabel.isEmpty() ? QStringLiteral("APT") : contextLabel);
+  lines << QStringLiteral("Frame: %1 / %2")
+               .arg(static_cast<qulonglong>(frameIndex))
+               .arg(static_cast<qulonglong>(frames.size()));
+
+  if (frames.empty()) {
+    lines << QStringLiteral("No frames.");
+    return lines.join(QLatin1Char('\n'));
+  }
+
+  if (frameIndex >= frames.size()) {
+    lines << QStringLiteral("Frame index out of range.");
+    return lines.join(QLatin1Char('\n'));
+  }
+
+  const gf::apt::AptFrame resolved = gf::apt::build_display_list_frame(frames, frameIndex);
+  lines << QStringLiteral("Display list nodes: %1").arg(resolved.placements.size());
+
+  if (resolved.placements.empty()) {
+    lines << QStringLiteral("(empty)");
+    return lines.join(QLatin1Char('\n'));
+  }
+
+  std::vector<std::size_t> order(resolved.placements.size());
+  for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+  std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+    return resolved.placements[a].depth < resolved.placements[b].depth;
+  });
+
+  for (const std::size_t idx : order) {
+    const auto& pl = resolved.placements[idx];
+    lines << QStringLiteral("[%1] depth=%2 charId=%3 name=%4 tx=(%5,%6) m=[%7 %8; %9 %10]")
+                 .arg(static_cast<qulonglong>(idx))
+                 .arg(pl.depth)
+                 .arg(pl.character)
+                 .arg(pl.instance_name.empty()
+                          ? QStringLiteral("-")
+                          : QString::fromStdString(pl.instance_name))
+                 .arg(pl.transform.x, 0, 'f', 2)
+                 .arg(pl.transform.y, 0, 'f', 2)
+                 .arg(pl.transform.scale_x, 0, 'f', 3)
+                 .arg(pl.transform.rotate_skew_1, 0, 'f', 3)
+                 .arg(pl.transform.rotate_skew_0, 0, 'f', 3)
+                 .arg(pl.transform.scale_y, 0, 'f', 3);
+  }
+
+  return lines.join(QLatin1Char('\n'));
+}
+
+void MainWindow::renderDatImageToScene(int imageIndex)
+{
+  if (!m_datPreviewScene) return;
+
+  m_datPreviewScene->clear();
+
+  if (!m_currentDatFile) {
+    if (m_datEntryInfoLabel) m_datEntryInfoLabel->setText(QStringLiteral("(no DAT loaded)"));
+    return;
+  }
+
+  const auto& images = m_currentDatFile->images;
+  if (imageIndex < 0 || imageIndex >= static_cast<int>(images.size())) {
+    if (m_datEntryInfoLabel) m_datEntryInfoLabel->setText(QStringLiteral("(select a row to preview)"));
+    return;
+  }
+
+  const auto& img = images[static_cast<std::size_t>(imageIndex)];
+  const bool applyTransform = m_datApplyTransformCheck && m_datApplyTransformCheck->isChecked();
+  const QColor fill(img.color_r, img.color_g, img.color_b, std::max<int>(img.color_a, 24));
+  const QColor stroke(std::min<int>(img.color_r + 24, 255),
+                      std::min<int>(img.color_g + 24, 255),
+                      std::min<int>(img.color_b + 24, 255),
+                      230);
+  const QPen pen(stroke, 0.0);
+  const QBrush brush(fill);
+
+  QTransform datTransform(static_cast<qreal>(img.matrix_m00),
+                          static_cast<qreal>(img.matrix_m10),
+                          static_cast<qreal>(img.matrix_m01),
+                          static_cast<qreal>(img.matrix_m11),
+                          static_cast<qreal>(img.offset_x),
+                          static_cast<qreal>(img.offset_y));
+
+  QRectF sceneBounds;
+  bool haveBounds = false;
+
+  for (const auto& tri : img.triangles) {
+    QPolygonF poly;
+    for (int v = 0; v < 3; ++v) {
+      QPointF pt(static_cast<qreal>(tri.v[v].x), static_cast<qreal>(tri.v[v].y));
+      if (applyTransform) pt = datTransform.map(pt);
+      poly << pt;
+    }
+    auto* item = m_datPreviewScene->addPolygon(poly, pen, brush);
+    item->setZValue(1.0);
+    const QRectF br = item->sceneBoundingRect();
+    sceneBounds = haveBounds ? sceneBounds.united(br) : br;
+    haveBounds = true;
+  }
+
+  const QPointF origin = applyTransform
+      ? datTransform.map(QPointF(0.0, 0.0))
+      : QPointF(0.0, 0.0);
+  const QPen axisPen(QColor(255, 255, 255, 160), 0.0, Qt::DashLine);
+  m_datPreviewScene->addLine(origin.x() - 8.0, origin.y(), origin.x() + 8.0, origin.y(), axisPen)->setZValue(2.0);
+  m_datPreviewScene->addLine(origin.x(), origin.y() - 8.0, origin.x(), origin.y() + 8.0, axisPen)->setZValue(2.0);
+
+  auto* label = m_datPreviewScene->addSimpleText(QStringLiteral("DAT #%1 / charId=%2")
+                                                     .arg(imageIndex)
+                                                     .arg(img.charId));
+  label->setBrush(QBrush(QColor(230, 230, 240)));
+  label->setPos(origin + QPointF(6.0, -label->boundingRect().height() - 4.0));
+  label->setZValue(3.0);
+  const QRectF labelBr = label->sceneBoundingRect();
+  sceneBounds = haveBounds ? sceneBounds.united(labelBr) : labelBr;
+  haveBounds = true;
+
+  if (!haveBounds || !sceneBounds.isValid() || sceneBounds.isEmpty())
+    sceneBounds = QRectF(-32.0, -32.0, 64.0, 64.0);
+
+  sceneBounds = sceneBounds.adjusted(-24.0, -24.0, 24.0, 24.0);
+  m_datPreviewScene->setSceneRect(sceneBounds);
+  if (m_datPreviewView) m_datPreviewView->fitInView(sceneBounds, Qt::KeepAspectRatio);
+
+  if (m_datEntryInfoLabel) {
+    m_datEntryInfoLabel->setText(
+        QStringLiteral("Row: %1\nCharId: %2\nTriangles: %3\nRGBA: (%4, %5, %6, %7)\n"
+                       "Matrix: [%8 %9; %10 %11]\nOffset: (%12, %13)\nFile offset: 0x%14")
+            .arg(imageIndex)
+            .arg(img.charId)
+            .arg(img.triangles.size())
+            .arg(img.color_r).arg(img.color_g).arg(img.color_b).arg(img.color_a)
+            .arg(img.matrix_m00, 0, 'f', 3)
+            .arg(img.matrix_m01, 0, 'f', 3)
+            .arg(img.matrix_m10, 0, 'f', 3)
+            .arg(img.matrix_m11, 0, 'f', 3)
+            .arg(img.offset_x, 0, 'f', 2)
+            .arg(img.offset_y, 0, 'f', 2)
+            .arg(img.file_offset, 0, 16));
+  }
+}
+
+const gf::dat::DatImage* MainWindow::findDatImageByCharId(std::uint32_t charId) const noexcept
+{
+  if (!m_currentDatFile) return nullptr;
+  for (const auto& img : m_currentDatFile->images)
+    if (img.charId == charId) return &img;
+  return nullptr;
+}
+
+void MainWindow::renderDatGeometryToAptScene(const gf::dat::DatImage& img,
+                                              const QTransform& worldTransform,
+                                              QGraphicsScene* scene,
+                                              bool debugOverlay) const
+{
+  // Render DAT triangles using an APT world transform (the placement transform
+  // from the APT character table).  The DAT entry's own matrix/offset is NOT
+  // applied here because the APT placement transform is assumed to already
+  // encode the final screen position.  This is a debug fallback; accuracy is
+  // uncertain until the coordinate system is fully confirmed.
+
+  if (img.triangles.empty()) return;
+
+  // Diagnostic fill: cyan/teal with dashed white outline — visually distinct
+  // from native APT rendering so fallback geometry is immediately recognisable.
+  const QColor datFill(0, 200, 200, 60);
+  const QPen   datPen(QColor(0, 220, 220, 200), 0, Qt::DashLine);
+
+  for (const auto& tri : img.triangles) {
+    QPolygonF local;
+    for (int v = 0; v < 3; ++v)
+      local << QPointF(static_cast<qreal>(tri.v[v].x),
+                       static_cast<qreal>(tri.v[v].y));
+    const QPolygonF world = worldTransform.map(local);
+    scene->addPolygon(world, datPen, QBrush(datFill));
+  }
+
+  if (debugOverlay) {
+    // Label placed at origin of the world transform
+    const QPointF origin = worldTransform.map(QPointF(0.0, 0.0));
+    auto* lbl = scene->addSimpleText(
+        QStringLiteral("DAT charId=%1 (%2 tri)").arg(img.charId).arg(img.triangles.size()));
+    lbl->setBrush(QBrush(QColor(0, 220, 200)));
+    lbl->setPos(origin + QPointF(4.0, -lbl->boundingRect().height() - 4.0));
+  }
+}
+
+
+void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
+                                             const QTransform& parentTransform,
+                                             const std::vector<gf::apt::AptCharacter>& characterTable,
+                                             int rootPlacementIndex,
+                                             int highlightRootPlacementIdx,
+                                             bool debugOverlay,
+                                             int recursionDepth,
+                                             const QString& parentChainLabel)
+{
+  constexpr int kMaxRecursionDepth = 16;
+  if (!m_currentAptFile || !m_aptPreviewScene) return;
+
+  auto resolveCharacter = [&](std::uint32_t cid) -> const gf::apt::AptCharacter* {
+    if (cid < characterTable.size() && characterTable[cid].type != 0)
+      return &characterTable[cid];
+    if (&characterTable != &m_currentAptFile->characters
+        && cid < m_currentAptFile->characters.size()
+        && m_currentAptFile->characters[cid].type != 0)
+      return &m_currentAptFile->characters[cid];
+    return nullptr;
+  };
+
+  const gf::apt::AptCharacter* ch = resolveCharacter(charId);
+  if (!ch) {
+    gf::apt::RenderNode unknown;
+    unknown.kind = gf::apt::RenderNode::Kind::Unknown;
+    unknown.characterId = charId;
+    unknown.worldTransform = gf::apt::Transform2D::identity();
+    unknown.worldTransform.a = static_cast<float>(parentTransform.m11());
+    unknown.worldTransform.b = static_cast<float>(parentTransform.m12());
+    unknown.worldTransform.c = static_cast<float>(parentTransform.m21());
+    unknown.worldTransform.d = static_cast<float>(parentTransform.m22());
+    unknown.worldTransform.tx = static_cast<float>(parentTransform.dx());
+    unknown.worldTransform.ty = static_cast<float>(parentTransform.dy());
+    unknown.rootPlacementIndex = rootPlacementIndex;
+    unknown.parentChainLabel = parentChainLabel.toStdString();
+    drawRenderNodeToScene(unknown, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    if (const gf::dat::DatImage* datImg = findDatImageByCharId(charId))
+      renderDatGeometryToAptScene(*datImg, parentTransform, m_aptPreviewScene, debugOverlay);
+    return;
+  }
+
+  if (ch->type != 5 && ch->type != 9) {
+    gf::apt::RenderNode leaf;
+    leaf.kind = gf::apt::kindFromCharType(ch->type);
+    leaf.characterId = charId;
+    leaf.worldTransform.a = static_cast<float>(parentTransform.m11());
+    leaf.worldTransform.b = static_cast<float>(parentTransform.m12());
+    leaf.worldTransform.c = static_cast<float>(parentTransform.m21());
+    leaf.worldTransform.d = static_cast<float>(parentTransform.m22());
+    leaf.worldTransform.tx = static_cast<float>(parentTransform.dx());
+    leaf.worldTransform.ty = static_cast<float>(parentTransform.dy());
+    leaf.localBounds = ch->bounds;
+    leaf.rootPlacementIndex = rootPlacementIndex;
+    leaf.parentChainLabel = parentChainLabel.toStdString();
+    drawRenderNodeToScene(leaf, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    return;
+  }
+
+  auto lg = gf::core::Log::get();
+  const QString indent(recursionDepth * 2, QLatin1Char(' '));
+  if (lg) lg->debug("[APT] {}renderSprite charId={} depth={}", indent.toStdString(), charId, recursionDepth);
+
+  if (recursionDepth >= kMaxRecursionDepth) {
+    if (lg) lg->warn("[APT] {}max sprite recursion depth hit for charId={}", indent.toStdString(), charId);
+    gf::apt::RenderNode plh;
+    plh.kind = (ch->type == 9) ? gf::apt::RenderNode::Kind::Movie : gf::apt::RenderNode::Kind::Sprite;
+    plh.characterId = charId;
+    plh.worldTransform.a = static_cast<float>(parentTransform.m11());
+    plh.worldTransform.b = static_cast<float>(parentTransform.m12());
+    plh.worldTransform.c = static_cast<float>(parentTransform.m21());
+    plh.worldTransform.d = static_cast<float>(parentTransform.m22());
+    plh.worldTransform.tx = static_cast<float>(parentTransform.dx());
+    plh.worldTransform.ty = static_cast<float>(parentTransform.dy());
+    plh.localBounds = ch->bounds;
+    plh.rootPlacementIndex = rootPlacementIndex;
+    plh.parentChainLabel = parentChainLabel.toStdString();
+    drawRenderNodeToScene(plh, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    return;
+  }
+
+  if (debugOverlay) {
+    const QPointF origin = parentTransform.map(QPointF(0.0, 0.0));
+    auto* lbl = m_aptPreviewScene->addSimpleText(QStringLiteral("S#%1").arg(charId));
+    lbl->setBrush(QBrush(QColor(255, 190, 90, 200)));
+    lbl->setPos(origin + QPointF(4.0, 4.0));
+  }
+
+  if (ch->frames.empty()) {
+    gf::apt::RenderNode plh;
+    plh.kind = (ch->type == 9) ? gf::apt::RenderNode::Kind::Movie : gf::apt::RenderNode::Kind::Sprite;
+    plh.characterId = charId;
+    plh.worldTransform.a = static_cast<float>(parentTransform.m11());
+    plh.worldTransform.b = static_cast<float>(parentTransform.m12());
+    plh.worldTransform.c = static_cast<float>(parentTransform.m21());
+    plh.worldTransform.d = static_cast<float>(parentTransform.m22());
+    plh.worldTransform.tx = static_cast<float>(parentTransform.dx());
+    plh.worldTransform.ty = static_cast<float>(parentTransform.dy());
+    plh.localBounds = ch->bounds;
+    plh.rootPlacementIndex = rootPlacementIndex;
+    plh.parentChainLabel = parentChainLabel.toStdString();
+    drawRenderNodeToScene(plh, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    return;
+  }
+
+  const std::vector<gf::apt::AptCharacter>& childTable =
+      (ch->type == 9 && !ch->nested_characters.empty()) ? ch->nested_characters : characterTable;
+  const gf::apt::AptFrame spriteDl = gf::apt::build_display_list_frame(ch->frames, 0);
+  if (lg) lg->debug("[APT] {}sprite nodes={}", indent.toStdString(), spriteDl.placements.size());
+  renderAptResolvedFrameRecursive(spriteDl, parentTransform, childTable,
+                                  rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
+                                  recursionDepth + 1,
+                                  parentChainLabel + QStringLiteral(" → S#%1").arg(charId));
+}
+
+void MainWindow::renderAptResolvedFrameRecursive(const gf::apt::AptFrame& resolvedFrame,
+                                                 const QTransform& parentTransform,
+                                                 const std::vector<gf::apt::AptCharacter>& characterTable,
+                                                 int rootPlacementIndex,
+                                                 int highlightRootPlacementIdx,
+                                                 bool debugOverlay,
+                                                 int recursionDepth,
+                                                 const QString& parentChainLabel)
+{
+  std::vector<std::size_t> order(resolvedFrame.placements.size());
+  for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+  std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+    return resolvedFrame.placements[a].depth < resolvedFrame.placements[b].depth;
+  });
+
+  for (const std::size_t pi : order) {
+    const auto& pl = resolvedFrame.placements[pi];
+    const int effectiveRootIndex = (rootPlacementIndex >= 0)
+        ? rootPlacementIndex
+        : static_cast<int>(pi);
+
+    const QTransform local = transform2DToQt(gf::apt::toTransform2D(pl.transform));
+    const QTransform childWorld = parentTransform * local;
+
+    auto resolveCharacter = [&](std::uint32_t cid) -> const gf::apt::AptCharacter* {
+      if (cid < characterTable.size() && characterTable[cid].type != 0)
+        return &characterTable[cid];
+      if (m_currentAptFile && &characterTable != &m_currentAptFile->characters
+          && cid < m_currentAptFile->characters.size()
+          && m_currentAptFile->characters[cid].type != 0)
+        return &m_currentAptFile->characters[cid];
+      return nullptr;
+    };
+    const gf::apt::AptCharacter* ch = resolveCharacter(pl.character);
+
+    if (ch && (ch->type == 5 || ch->type == 9)) {
+      renderAptCharacterRecursive(pl.character, childWorld, characterTable,
+                                  effectiveRootIndex, highlightRootPlacementIdx, debugOverlay,
+                                  recursionDepth, parentChainLabel);
       continue;
     }
 
-    // ── Sprite / Movie placeholder (empty frames, depth-limited, or unresolvable) ──
-    // Always draw a visible indicator so the placement is never silently invisible.
-    if (node.kind == gf::apt::RenderNode::Kind::Sprite ||
-        node.kind == gf::apt::RenderNode::Kind::Movie) {
-      const QTransform wt = transform2DToQt(node.worldTransform);
-      const QPointF origin = wt.map(QPointF(0.0, 0.0));
-      // Draw a small diamond at the placement origin.
-      const qreal r = isHighlighted ? 10.0 : 6.0;
-      const QColor col = isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0, 200);
-      const QPen diamPen(col, isHighlighted ? 2.0 : 1.5);
-      const QBrush diamBrush(QColor(col.red(), col.green(), col.blue(), isHighlighted ? 60 : 25));
-      QPolygonF diamond;
-      diamond << QPointF(0, -r) << QPointF(r, 0) << QPointF(0, r) << QPointF(-r, 0);
-      auto* diamItem = scene->addPolygon(diamond, diamPen, diamBrush);
-      diamItem->setPos(origin);
-      // Label with character id + depth (always); add parent chain in debug mode.
-      const QString name = node.instanceName.empty()
-          ? QString("C%1").arg(node.characterId)
-          : QString::fromStdString(node.instanceName);
-      QString lbl = QString("SPR %1\nD%2").arg(name).arg(node.placementDepth);
-      if (debugOverlay && !node.parentChainLabel.empty())
-        lbl += QString("\n%1").arg(QString::fromStdString(node.parentChainLabel));
-      auto* lblItem = scene->addSimpleText(lbl);
-      lblItem->setPos(origin + QPointF(r + 2.0, -r));
-      lblItem->setBrush(QBrush(col));
-      continue;
-    }
+    gf::apt::RenderNode node;
+    node.kind = ch ? gf::apt::kindFromCharType(ch->type) : gf::apt::RenderNode::Kind::Unknown;
+    node.characterId = pl.character;
+    node.placementDepth = pl.depth;
+    node.instanceName = pl.instance_name;
+    node.worldTransform.a = static_cast<float>(childWorld.m11());
+    node.worldTransform.b = static_cast<float>(childWorld.m12());
+    node.worldTransform.c = static_cast<float>(childWorld.m21());
+    node.worldTransform.d = static_cast<float>(childWorld.m22());
+    node.worldTransform.tx = static_cast<float>(childWorld.dx());
+    node.worldTransform.ty = static_cast<float>(childWorld.dy());
+    node.localBounds = ch ? ch->bounds : std::optional<gf::apt::AptBounds>{};
+    node.rootPlacementIndex = effectiveRootIndex;
+    node.parentChainLabel = parentChainLabel.toStdString();
+    drawRenderNodeToScene(node, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
 
-    // ── Leaf character ───────────────────────────────────────────────────────
-    QRectF localRect;
-    if (node.localBounds) {
-      const gf::apt::AptBounds& b = *node.localBounds;
-      const qreal bw = static_cast<qreal>(b.right  - b.left);
-      const qreal bh = static_cast<qreal>(b.bottom - b.top);
-      if (bw > 0.0 && bh > 0.0)
-        localRect = QRectF(static_cast<qreal>(b.left), static_cast<qreal>(b.top), bw, bh);
-    }
-    if (!localRect.isValid() || localRect.width() < 1.0 || localRect.height() < 1.0)
-      localRect = QRectF(0.0, 0.0, 120.0, 48.0);
-
-    QPen pen;
-    QBrush brush;
-    if (isHighlighted) {
-      pen   = QPen(QColor(255, 210,  64), 3.0);
-      brush = QBrush(QColor(255, 210,  64, 70));
-    } else if (node.kind == gf::apt::RenderNode::Kind::Image) {
-      const int alpha = isRootLevel ? 220 : 160;
-      pen   = QPen(QColor(180, 120, 255, alpha), isRootLevel ? 2.0 : 1.0);
-      brush = QBrush(QColor(140,  80, 255, isRootLevel ? 55 : 25));
-    } else if (isRootLevel) {
-      pen   = QPen(QColor(140, 190, 255), 2.0);
-      brush = QBrush(QColor(100, 170, 255, 45));
-    } else {
-      pen   = QPen(QColor( 80, 210, 160, 180), 1.0);
-      brush = QBrush(QColor( 60, 180, 130,  25));
-    }
-
-    const QTransform wt = transform2DToQt(node.worldTransform);
-    auto* rectItem = scene->addRect(localRect, pen, brush);
-    rectItem->setTransform(wt);
-
-    if (isRootLevel || debugOverlay) {
-      const QString name = node.instanceName.empty()
-          ? QString("C%1").arg(node.characterId)
-          : QString::fromStdString(node.instanceName);
-      QString label = QString("%1\nD%2/C%3").arg(name).arg(node.placementDepth).arg(node.characterId);
-      if (debugOverlay && !node.parentChainLabel.empty())
-        label += QString("\n%1").arg(QString::fromStdString(node.parentChainLabel));
-      const QPointF sceneTL = wt.map(QPointF(localRect.left(), localRect.top()));
-      auto* textItem = scene->addSimpleText(label);
-      textItem->setPos(sceneTL.x() + 4.0, sceneTL.y() + 4.0);
-      textItem->setBrush(QBrush(
-          isHighlighted ? QColor(255, 235, 140) :
-          isRootLevel   ? QColor(225, 225, 230) :
-                          QColor(170, 230, 195)));
-    }
-
-    if (debugOverlay) {
-      const QPointF origin = wt.map(QPointF(0.0, 0.0));
-      const QPen xhair(isHighlighted ? QColor(255, 210, 64, 200)
-                                     : QColor(255, 80,  80, 200), 1.5);
-      scene->addLine(origin.x() - 5, origin.y(), origin.x() + 5, origin.y(), xhair);
-      scene->addLine(origin.x(), origin.y() - 5, origin.x(), origin.y() + 5, xhair);
-
-      // Matrix inspection label.
-      const gf::apt::Transform2D& m = node.worldTransform;
-      const QString matStr = QString("a=%1 b=%2\nc=%3 d=%4\ntx=%5 ty=%6")
-          .arg(m.a,  0,'f',3).arg(m.b,  0,'f',3)
-          .arg(m.c,  0,'f',3).arg(m.d,  0,'f',3)
-          .arg(m.tx, 0,'f',1).arg(m.ty, 0,'f',1);
-      auto* matLabel = scene->addSimpleText(matStr);
-      matLabel->setPos(origin.x() + 8.0, origin.y() - 42.0);
-      matLabel->setBrush(QBrush(isHighlighted ? QColor(255, 210, 64, 180)
-                                              : QColor(200, 200, 200, 160)));
+    if (!ch) {
+      if (const gf::dat::DatImage* datImg = findDatImageByCharId(pl.character))
+        renderDatGeometryToAptScene(*datImg, childWorld, m_aptPreviewScene, debugOverlay);
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 
 void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
                                        int highlightedPlacementIndex,
@@ -5753,6 +6375,7 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
                                        bool fitToContent) {
   if (!m_aptPreviewScene || !m_currentAptFile) return;
 
+  m_aptPreviewScene->clearEditorOverlay();
   m_aptPreviewScene->clear();
 
   const auto [sceneWidth, sceneHeight] = resolveAptPreviewCanvasSize(m_currentAptFile->summary);
@@ -5775,6 +6398,7 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
   originLabel->setPos(6.0, 6.0);
 
   if (!frame) {
+    if (m_aptDlStatusLabel) m_aptDlStatusLabel->setText("(no frame selected)");
     const QString msg = noFrameMsg.isEmpty()
         ? QStringLiteral("Select a frame or character to preview.")
         : noFrameMsg;
@@ -5797,10 +6421,177 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
   const std::vector<gf::apt::AptCharacter>& table =
       characterTable ? *characterTable : m_currentAptFile->characters;
 
-  const auto nodes = gf::apt::renderAptFrame(*m_currentAptFile, *frame, table,
-                                              gf::apt::Transform2D::identity(),
-                                              opts);
-  renderNodesToScene(nodes, highlightedPlacementIndex, debugOverlay, m_aptPreviewScene);
+  std::vector<gf::apt::RenderNode> nodes;
+  bool renderedTimeline = false;
+  if (m_aptCharPreviewIdx >= 0
+      && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+    const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)];
+    if (!ch.frames.empty() && frame->index < ch.frames.size() && &ch.frames[frame->index] == frame) {
+      nodes = gf::apt::renderAptTimelineFrame(*m_currentAptFile, ch.frames, frame->index, table,
+                                              gf::apt::Transform2D::identity(), opts);
+      renderedTimeline = true;
+    }
+  }
+  if (!renderedTimeline && frame->index < m_currentAptFile->frames.size()
+      && &m_currentAptFile->frames[frame->index] == frame) {
+    nodes = gf::apt::renderAptTimelineFrame(*m_currentAptFile, m_currentAptFile->frames, frame->index, table,
+                                            gf::apt::Transform2D::identity(), opts);
+    renderedTimeline = true;
+  }
+  if (!renderedTimeline) {
+    nodes = gf::apt::renderAptFrame(*m_currentAptFile, *frame, table,
+                                    gf::apt::Transform2D::identity(), opts);
+  }
+
+  // ── Display-list diagnostics ──────────────────────────────────────────────
+  {
+    // Count node categories for the status line.
+    int unknownCnt = 0, containerCnt = 0;
+    for (const auto& n : nodes) {
+      if (n.kind == gf::apt::RenderNode::Kind::Unknown) ++unknownCnt;
+      else if (n.kind == gf::apt::RenderNode::Kind::Sprite
+            || n.kind == gf::apt::RenderNode::Kind::Movie) ++containerCnt;
+    }
+
+    // Find frame label for the status line (FrameLabel item in current frame).
+    QString frameLabel;
+    if (frame->index < m_currentAptFile->frames.size()
+        && &m_currentAptFile->frames[frame->index] == frame) {
+      for (const auto& it : m_currentAptFile->frames[frame->index].items)
+        if (it.kind == gf::apt::AptFrameItemKind::FrameLabel && !it.label.empty()) {
+          frameLabel = QString::fromStdString(it.label);
+          break;
+        }
+    } else if (m_aptCharPreviewIdx >= 0
+               && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+      const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)];
+      if (frame->index < ch.frames.size())
+        for (const auto& it : ch.frames[frame->index].items)
+          if (it.kind == gf::apt::AptFrameItemKind::FrameLabel && !it.label.empty()) {
+            frameLabel = QString::fromStdString(it.label);
+            break;
+          }
+    }
+
+    // Build the total-frame count for the status line.
+    int totalFrames = 0;
+    if (m_aptCharPreviewIdx >= 0
+        && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size()))
+      totalFrames = static_cast<int>(
+          m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)].frames.size());
+    else
+      totalFrames = static_cast<int>(m_currentAptFile->frames.size());
+
+    // Update status label.
+    if (m_aptDlStatusLabel) {
+      const QString mode = renderedTimeline ? "timeline DL" : "single-frame";
+      QString status = QStringLiteral("[%1] Frame %2/%3%4 · %5 node%6")
+                           .arg(mode)
+                           .arg(frame->index + 1).arg(totalFrames)
+                           .arg(frameLabel.isEmpty() ? QString() : QStringLiteral(" \"%1\"").arg(frameLabel))
+                           .arg(nodes.size()).arg(nodes.size() == 1 ? "" : "s");
+      if (unknownCnt > 0)    status += QStringLiteral(" · %1 unresolved").arg(unknownCnt);
+      if (containerCnt > 0)  status += QStringLiteral(" · %1 container placeholder%2").arg(containerCnt).arg(containerCnt == 1 ? "" : "s");
+      m_aptDlStatusLabel->setText(status);
+    }
+
+    // spdlog — frame + DL composition.
+    if (auto lg = gf::core::Log::get()) {
+      lg->debug("[APT-DL] Frame {}{} — {} ({} node{}, {} unresolved, {} containers)",
+                frame->index,
+                frameLabel.isEmpty() ? "" : " \"" + frameLabel.toStdString() + "\"",
+                renderedTimeline ? "timeline DL" : "single-frame",
+                nodes.size(), nodes.size() == 1 ? "" : "s",
+                unknownCnt, containerCnt);
+      for (const auto& n : nodes) {
+        const char* kindStr = "?";
+        switch (n.kind) {
+          case gf::apt::RenderNode::Kind::Shape:    kindStr = "Shape";    break;
+          case gf::apt::RenderNode::Kind::Image:    kindStr = "Image";    break;
+          case gf::apt::RenderNode::Kind::EditText: kindStr = "EditText"; break;
+          case gf::apt::RenderNode::Kind::Button:   kindStr = "Button";   break;
+          case gf::apt::RenderNode::Kind::Sprite:   kindStr = "Sprite";   break;
+          case gf::apt::RenderNode::Kind::Movie:    kindStr = "Movie";    break;
+          case gf::apt::RenderNode::Kind::Unknown:  kindStr = "Unknown";  break;
+        }
+        lg->debug("[APT-DL]   D{} C{} {} tx={:.1f} ty={:.1f}{}",
+                  n.placementDepth, n.characterId, kindStr,
+                  n.worldTransform.tx, n.worldTransform.ty,
+                  n.instanceName.empty() ? "" : " \"" + n.instanceName + "\"");
+      }
+
+      // Sprite-tree walk: log recursive sprite/movie sub-structure in debug mode.
+      if (debugOverlay) {
+        lg->debug("[APT] --- sprite tree walk ---");
+        const std::vector<gf::apt::AptCharacter>& tbl =
+            characterTable ? *characterTable : m_currentAptFile->characters;
+        // Determine the source frames to build the resolved DL from.
+        const std::vector<gf::apt::AptFrame>* srcFrames = nullptr;
+        if (m_aptCharPreviewIdx >= 0
+            && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+          const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)];
+          if (!ch.frames.empty() && frame->index < ch.frames.size()
+              && &ch.frames[frame->index] == frame)
+            srcFrames = &ch.frames;
+        }
+        if (!srcFrames && frame->index < m_currentAptFile->frames.size()
+            && &m_currentAptFile->frames[frame->index] == frame)
+          srcFrames = &m_currentAptFile->frames;
+        if (srcFrames) {
+          const gf::apt::AptFrame dl =
+              gf::apt::build_display_list_frame(*srcFrames, frame->index);
+          logAptSpriteTree(*m_currentAptFile, tbl, dl, 0, lg);
+        }
+        lg->debug("[APT] --- end sprite tree ---");
+      }
+    }
+
+    // Debug scene: DL text overlay in the top-left corner (outside canvas bounds).
+    if (debugOverlay && !nodes.empty()) {
+      QString dlText = QStringLiteral("─ DL frame %1 ─\n").arg(frame->index);
+      for (const auto& n : nodes) {
+        const char* k = "?";
+        switch (n.kind) {
+          case gf::apt::RenderNode::Kind::Shape:    k = "Shp"; break;
+          case gf::apt::RenderNode::Kind::Image:    k = "Img"; break;
+          case gf::apt::RenderNode::Kind::EditText: k = "Txt"; break;
+          case gf::apt::RenderNode::Kind::Sprite:   k = "Spr"; break;
+          case gf::apt::RenderNode::Kind::Movie:    k = "Mov"; break;
+          case gf::apt::RenderNode::Kind::Unknown:  k = "???"; break;
+          default: break;
+        }
+        dlText += QStringLiteral("D%-3 C%-4 %5 tx=%.0f ty=%.0f\n")
+                      .arg(n.placementDepth).arg(n.characterId).arg(k)
+                      .arg(n.worldTransform.tx).arg(n.worldTransform.ty);
+      }
+      auto* dlItem = m_aptPreviewScene->addSimpleText(dlText);
+      dlItem->setBrush(QBrush(QColor(180, 220, 180, 220)));
+      // Place it to the left of the canvas.
+      dlItem->setPos(-dlItem->boundingRect().width() - 8.0, 0.0);
+    }
+  }
+
+  const std::vector<gf::apt::AptFrame>* renderSourceFrames = nullptr;
+  if (m_aptCharPreviewIdx >= 0
+      && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+    const auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)];
+    if (!ch.frames.empty() && frame->index < ch.frames.size() && &ch.frames[frame->index] == frame)
+      renderSourceFrames = &ch.frames;
+  }
+  if (!renderSourceFrames && frame->index < m_currentAptFile->frames.size()
+      && &m_currentAptFile->frames[frame->index] == frame) {
+    renderSourceFrames = &m_currentAptFile->frames;
+  }
+
+  if (renderSourceFrames) {
+    const gf::apt::AptFrame resolvedFrame =
+        gf::apt::build_display_list_frame(*renderSourceFrames, frame->index);
+    renderAptResolvedFrameRecursive(resolvedFrame, QTransform(), table,
+                                    -1, highlightedPlacementIndex, debugOverlay, 0, QStringLiteral("Root"));
+  } else {
+    renderAptResolvedFrameRecursive(*frame, QTransform(), table,
+                                    -1, highlightedPlacementIndex, debugOverlay, 0, QStringLiteral("Root"));
+  }
 
   // Option C: if every node is a Sprite/Movie/Unknown placeholder (no leaf content),
   // show an explanatory message so the user knows to browse individual characters.
@@ -5843,6 +6634,8 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
       diagLabel->setPos(sceneWidth - diagLabel->boundingRect().width() - 8.0, 8.0);
     }
   }
+
+  syncAptEditorSceneContext();
 
   if (m_aptPreviewView) {
     if (fitToContent) {
@@ -6044,6 +6837,146 @@ void MainWindow::refreshAptPreview() {
   renderAptFrameToScene(&m_currentAptFile->frames[static_cast<std::size_t>(fi)], hi);
 }
 
+void MainWindow::syncAptEditorSceneContext() {
+  if (!m_aptPreviewScene || !m_currentAptFile) return;
+
+  gf::gui::apt_editor::AptPreviewScene::Context ctx;
+  ctx.file = &*m_currentAptFile;
+  ctx.debugOverlay = m_aptDebugAction && m_aptDebugAction->isChecked();
+
+  if (m_aptCharPreviewIdx >= 0
+      && m_aptCharPreviewIdx < static_cast<int>(m_currentAptFile->characters.size())) {
+    auto& ch = m_currentAptFile->characters[static_cast<std::size_t>(m_aptCharPreviewIdx)];
+    ctx.timelineFrames = &ch.frames;
+    ctx.characterTable = ch.nested_characters.empty() ? &m_currentAptFile->characters : &ch.nested_characters;
+    ctx.ownerKind = 1;
+    ctx.ownerIndex = m_aptCharPreviewIdx;
+    ctx.frameIndex = std::max(0, std::min(m_aptCurrentFrameIndex, static_cast<int>(ch.frames.size()) - 1));
+  } else {
+    ctx.timelineFrames = &m_currentAptFile->frames;
+    ctx.characterTable = &m_currentAptFile->characters;
+    ctx.ownerKind = 0;
+    ctx.ownerIndex = -1;
+    ctx.frameIndex = std::max(0, std::min(m_aptCurrentFrameIndex, static_cast<int>(m_currentAptFile->frames.size()) - 1));
+  }
+
+  m_aptPreviewScene->setContext(ctx);
+  m_aptPreviewScene->syncSelectionFromExternal(selectedAptPlacementIndex().value_or(-1));
+}
+
+QTreeWidgetItem* MainWindow::findAptPlacementTreeItem(int ownerKind, int ownerIndex, int frameIndex, int placementIndex) const {
+  if (!m_aptTree) return nullptr;
+  for (int i = 0; i < m_aptTree->topLevelItemCount(); ++i) {
+    QTreeWidgetItem* root = m_aptTree->topLevelItem(i);
+    QList<QTreeWidgetItem*> stack{root};
+    while (!stack.isEmpty()) {
+      QTreeWidgetItem* item = stack.takeLast();
+      if (item->data(0, kAptRoleNodeType).toInt() == kAptNodePlacement
+          && item->data(0, kAptRoleOwnerKind).toInt() == ownerKind
+          && item->data(0, kAptRoleOwnerIndex).toInt() == ownerIndex
+          && item->data(0, kAptRoleNodeIndex).toInt() == frameIndex
+          && item->data(0, kAptRolePlacementIndex).toInt() == placementIndex) {
+        return item;
+      }
+      for (int c = 0; c < item->childCount(); ++c) stack.append(item->child(c));
+    }
+  }
+  return nullptr;
+}
+
+void MainWindow::refreshAptPlacementTreeLabels() {
+  if (!m_currentAptFile || !m_aptTree) return;
+
+  auto findFrameNode = [&](int ownerKind, int ownerIndex, int frameIndex) -> QTreeWidgetItem* {
+    for (int i = 0; i < m_aptTree->topLevelItemCount(); ++i) {
+      QList<QTreeWidgetItem*> stack{m_aptTree->topLevelItem(i)};
+      while (!stack.isEmpty()) {
+        QTreeWidgetItem* item = stack.takeLast();
+        if (item->data(0, kAptRoleNodeType).toInt() == kAptNodeFrame
+            && item->data(0, kAptRoleOwnerKind).toInt() == ownerKind
+            && item->data(0, kAptRoleOwnerIndex).toInt() == ownerIndex
+            && item->data(0, kAptRoleNodeIndex).toInt() == frameIndex) {
+          return item;
+        }
+        for (int c = 0; c < item->childCount(); ++c) stack.append(item->child(c));
+      }
+    }
+    return nullptr;
+  };
+
+  auto rebuildFrameChildren = [&](const std::vector<gf::apt::AptFrame>& frames, int ownerKind, int ownerIndex, const QString& ownerLabel) {
+    for (std::size_t fi = 0; fi < frames.size(); ++fi) {
+      const auto& frame = frames[fi];
+      QTreeWidgetItem* frameNode = findFrameNode(ownerKind, ownerIndex, static_cast<int>(fi));
+      if (!frameNode) continue;
+      while (frameNode->childCount() > 0) {
+        delete frameNode->takeChild(frameNode->childCount() - 1);
+      }
+      frameNode->setText(1, QString::number(frame.frameitemcount));
+      frameNode->setData(0, Qt::UserRole,
+                         QString("Type: Frame\n"
+                                 "Index: %1\n"
+                                 "Frame Item Count: %2\n"
+                                 "Placement Count: %3\n"
+                                 "Items Offset: 0x%4\n"
+                                 "Offset: 0x%5")
+                             .arg(qulonglong(fi))
+                             .arg(frame.frameitemcount)
+                             .arg(frame.placements.size())
+                             .arg(QString::number(qulonglong(frame.items_offset), 16).toUpper())
+                             .arg(QString::number(qulonglong(frame.offset), 16).toUpper()));
+      for (std::size_t pi = 0; pi < frame.placements.size(); ++pi) {
+        const auto& placement = frame.placements[pi];
+        const QString label = placement.instance_name.empty()
+            ? QString("Placement %1").arg(pi)
+            : QString("Placement %1 — %2").arg(pi).arg(QString::fromStdString(placement.instance_name));
+        auto* child = new QTreeWidgetItem(frameNode, QStringList() << label << aptPlacementValueText(placement));
+        child->setData(0, Qt::UserRole,
+                       aptPlacementDetailText(placement, ownerLabel, static_cast<int>(fi), static_cast<int>(pi)));
+        child->setData(0, kAptRoleNodeType, kAptNodePlacement);
+        child->setData(0, kAptRoleNodeIndex, static_cast<int>(fi));
+        child->setData(0, kAptRoleOwnerKind, ownerKind);
+        child->setData(0, kAptRoleOwnerIndex, ownerIndex);
+        child->setData(0, kAptRolePlacementIndex, static_cast<int>(pi));
+      }
+    }
+  };
+
+  rebuildFrameChildren(m_currentAptFile->frames, 0, -1, QStringLiteral("Root Movie"));
+  for (std::size_t ci = 0; ci < m_currentAptFile->characters.size(); ++ci) {
+    rebuildFrameChildren(m_currentAptFile->characters[ci].frames, 1, static_cast<int>(ci), QString("Character %1").arg(ci));
+  }
+}
+
+void MainWindow::onAptSceneSelectionChanged(int placementIndex) {
+  if (!m_currentAptFile || !m_aptTree) return;
+  const int ownerKind = (m_aptCharPreviewIdx >= 0) ? 1 : 0;
+  const int ownerIndex = (m_aptCharPreviewIdx >= 0) ? m_aptCharPreviewIdx : -1;
+  if (placementIndex < 0) return;
+  if (QTreeWidgetItem* item = findAptPlacementTreeItem(ownerKind, ownerIndex, m_aptCurrentFrameIndex, placementIndex)) {
+    m_suppressSelectionChange = true;
+    m_aptTree->setCurrentItem(item);
+    m_suppressSelectionChange = false;
+    syncAptPropEditorFromItem(item);
+  }
+}
+
+void MainWindow::onAptScenePlacementEdited(int placementIndex, bool interactive) {
+  if (!m_currentAptFile) return;
+  refreshAptPlacementTreeLabels();
+  m_aptDirty = true;
+  setDirty(true);
+  if (QTreeWidgetItem* item = findAptPlacementTreeItem((m_aptCharPreviewIdx >= 0) ? 1 : 0,
+                                                       (m_aptCharPreviewIdx >= 0) ? m_aptCharPreviewIdx : -1,
+                                                       m_aptCurrentFrameIndex,
+                                                       placementIndex)) {
+    syncAptPropEditorFromItem(item);
+  }
+  if (!interactive) {
+    refreshAptPreview();
+  }
+}
+
 void MainWindow::syncAptPropEditorFromItem(QTreeWidgetItem* item) {
   if (!m_aptPropStack || !m_aptDetails) return;
 
@@ -6132,6 +7065,26 @@ void MainWindow::syncAptPropEditorFromItem(QTreeWidgetItem* item) {
       if (frame) {
         m_aptFrameItemCountLabel->setText(QString("%1 (%2 placements)").arg(frame->frameitemcount).arg(frame->placements.size()));
         m_aptFrameItemsOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(frame->items_offset), 16).toUpper()));
+
+        // Populate the cumulative display-list dump.
+        if (m_aptFrameDlDump) {
+          const QString ctx = (ownerKind == 1)
+              ? QStringLiteral("Character %1").arg(ownerIndex)
+              : QStringLiteral("Root Movie");
+          const std::vector<gf::apt::AptFrame>* frameList = nullptr;
+          if (ownerKind == 1 && ownerIndex >= 0
+              && ownerIndex < static_cast<int>(file.characters.size()))
+            frameList = &file.characters[static_cast<std::size_t>(ownerIndex)].frames;
+          else
+            frameList = &file.frames;
+
+          if (frameList && !frameList->empty())
+            m_aptFrameDlDump->setPlainText(
+                buildDlSummaryText(*frameList, static_cast<std::size_t>(index), ctx));
+          else
+            m_aptFrameDlDump->setPlainText("(no frames in this context)");
+        }
+
         m_aptPropStack->setCurrentWidget(m_aptFramePage);
       } else {
         m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
@@ -6899,6 +7852,129 @@ if (m_textView) {
     }
   }
 
+  // --- DAT tab ---
+  bool hasDat = false;
+  if (m_datTab && m_datImagesTable && m_datSummaryLabel) {
+    m_datSummaryLabel->setText({});
+    m_datImagesTable->setRowCount(0);
+    m_currentDatFile.reset();
+
+    // Resolve raw bytes for the entry (same inflate logic as RSF).
+    QByteArray datBytes = stored;
+    if (isEmbedded) {
+      const quint64 absOffset = item->data(0, Qt::UserRole + 1).toULongLong();
+      const quint64 compSize  = item->data(0, Qt::UserRole + 2).toULongLong();
+      if (!path.isEmpty() && compSize > 0) {
+        auto raw = read_file_range(path,
+                                   static_cast<std::uint64_t>(absOffset),
+                                   static_cast<std::uint64_t>(compSize));
+        if (!raw.empty()) {
+          QByteArray rawBytes(reinterpret_cast<const char*>(raw.data()),
+                              static_cast<int>(raw.size()));
+          if (looksZlib(rawBytes)) {
+            std::vector<std::uint8_t> zIn(raw.begin(), raw.end());
+            auto inflated = gf::core::AstArchive::inflateZlibPreview(zIn, 8u * 1024u * 1024u);
+            if (!inflated.empty())
+              datBytes = QByteArray(reinterpret_cast<const char*>(inflated.data()),
+                                    static_cast<int>(inflated.size()));
+            else
+              datBytes = rawBytes;
+          } else {
+            datBytes = rawBytes;
+          }
+        }
+      }
+    }
+
+    const bool datByExt  = fi.suffix().compare("dat", Qt::CaseInsensitive) == 0
+                        || type.compare("DAT", Qt::CaseInsensitive) == 0;
+    const bool datByHeur = datBytes.size() >= 16 &&
+                           gf::dat::looks_like_dat(
+                               reinterpret_cast<const std::uint8_t*>(datBytes.constData()),
+                               static_cast<std::size_t>(datBytes.size()));
+
+    if (datByExt || datByHeur) {
+      m_viewTabs->setCurrentWidget(m_datTab);
+
+      std::string parseErr;
+      auto datOpt = gf::dat::parse_dat(
+          reinterpret_cast<const std::uint8_t*>(datBytes.constData()),
+          static_cast<std::size_t>(datBytes.size()),
+          &parseErr);
+
+      if (m_datEntryInfoLabel) m_datEntryInfoLabel->setText("(select a row to preview)");
+      if (m_datCorrelLabel)    m_datCorrelLabel->setText({});
+      if (m_datPreviewScene)   m_datPreviewScene->clear();
+
+      if (datOpt.has_value()) {
+        m_currentDatFile = std::move(datOpt);
+        const auto& dat  = *m_currentDatFile;
+        m_datSummaryLabel->setText(
+            QStringLiteral("Images: %1   FileLen: %2 B   FirstOffset: 0x%3")
+                .arg(dat.summary.num_images)
+                .arg(dat.summary.file_len)
+                .arg(dat.summary.first_image_offset, 0, 16));
+
+        m_datImagesTable->setRowCount(static_cast<int>(dat.images.size()));
+        for (int row = 0; row < static_cast<int>(dat.images.size()); ++row) {
+          const auto& img = dat.images[row];
+          auto setCell = [&](int col, const QString& text) {
+            auto* it = new QTableWidgetItem(text);
+            it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+            m_datImagesTable->setItem(row, col, it);
+          };
+          setCell(0, QString::number(row));
+          setCell(1, QString::number(img.charId));
+          setCell(2, QStringLiteral("rgba(%1,%2,%3,%4)")
+                         .arg(img.color_r).arg(img.color_g).arg(img.color_b).arg(img.color_a));
+          setCell(3, QString::number(static_cast<double>(img.offset_x), 'f', 1));
+          setCell(4, QString::number(static_cast<double>(img.offset_y), 'f', 1));
+          setCell(5, QString::number(img.num_shapes));
+          setCell(6, QStringLiteral("0x%1").arg(img.file_offset, 0, 16));
+        }
+        m_datImagesTable->resizeColumnsToContents();
+
+        // APT/DAT correlation: compare DAT charIds against loaded APT character table
+        if (m_datCorrelLabel) {
+          QStringList datCharIds;
+          for (const auto& img : dat.images)
+            datCharIds << QString::number(img.charId);
+          QString correlText = QStringLiteral("DAT charIds: %1").arg(datCharIds.join(", "));
+
+          if (m_currentAptFile.has_value()) {
+            const auto& chars = m_currentAptFile->characters;
+            QStringList matched, unmatched;
+            for (const auto& img : dat.images) {
+              const bool inApt = img.charId < static_cast<std::uint32_t>(chars.size());
+              (inApt ? matched : unmatched) << QString::number(img.charId);
+            }
+            if (!matched.isEmpty())
+              correlText += QStringLiteral("\nMatched in APT character table: %1").arg(matched.join(", "));
+            if (!unmatched.isEmpty())
+              correlText += QStringLiteral("\nNot in APT character table: %1").arg(unmatched.join(", "));
+          } else {
+            correlText += "\n(No APT loaded — load an APT file to check charId correlation)";
+          }
+          m_datCorrelLabel->setText(correlText);
+        }
+
+        // Auto-render first entry
+        m_datImagesTable->selectRow(0);
+        renderDatImageToScene(0);
+        hasDat = true;
+      } else {
+        m_datSummaryLabel->setText(QStringLiteral("Parse failed: %1")
+                                       .arg(QString::fromStdString(parseErr)));
+        if (m_datPreviewScene) {
+          auto* t = m_datPreviewScene->addText(QStringLiteral("Parse failed:\n%1")
+                                                   .arg(QString::fromStdString(parseErr)));
+          t->setDefaultTextColor(QColor(255, 100, 100));
+        }
+        hasDat = true; // show the tab regardless so the error is visible
+      }
+    }
+  }
+
   // --- Texture tab (DDS / EA-wrapped DDS (P3R) preview) ---
   bool hasTexture = false;
   if (m_imageView) {
@@ -7112,11 +8188,15 @@ if (wantsTexture) {
   }
 
   if (m_viewTabs) {
-    int idx = 0; // Hex
-    if (hasTexture) idx = 2;
-    else if (hasRsf) idx = 3;
-    else if (hasText) idx = 1;
-    m_viewTabs->setCurrentIndex(idx);
+    if (hasDat)
+      m_viewTabs->setCurrentWidget(m_datTab);
+    else {
+      int idx = 0; // Hex
+      if (hasTexture) idx = 2;
+      else if (hasRsf) idx = 3;
+      else if (hasText) idx = 1;
+      m_viewTabs->setCurrentIndex(idx);
+    }
   }
 }
 } // end MainWindow::showViewerForItem

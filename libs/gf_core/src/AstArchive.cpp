@@ -553,6 +553,20 @@ MagicHint sniffMagic(const std::array<std::uint8_t, 16>& b) {
   // RSF containers in some EA titles often begin with 'RSF' or 'RSG' (heuristic).
   if (b[0] == 'R' && b[1] == 'S' && b[2] == 'F') return {"RSF", ".rsf"};
   if (b[0] == 'R' && b[1] == 'S' && b[2] == 'G') return {"RSG", ".rsg"};
+
+  // DAT geometry file (no magic bytes; validated by structural heuristic).
+  // Must be last — rule out everything else first.
+  if (b.size() >= 16) {
+    const std::uint32_t dat_flen  = (b[0]<<24)|(b[1]<<16)|(b[2]<<8)|b[3];
+    const std::uint32_t dat_nimgs = (b[4]<<24)|(b[5]<<16)|(b[6]<<8)|b[7];
+    const std::uint32_t dat_zeros = (b[8]<<24)|(b[9]<<16)|(b[10]<<8)|b[11];
+    const std::uint32_t dat_off0  = (b[12]<<24)|(b[13]<<16)|(b[14]<<8)|b[15];
+    if (dat_zeros == 0 && dat_nimgs > 0 && dat_nimgs < 5000 &&
+        dat_flen > 0 &&
+        dat_off0 >= (12u + dat_nimgs * 4u) && dat_off0 < dat_flen)
+      return {"DAT", ".dat"};
+  }
+
   return {};
 }
 

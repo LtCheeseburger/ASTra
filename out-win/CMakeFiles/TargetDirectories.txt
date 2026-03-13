@@ -39,6 +39,10 @@ D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/gf_apt.dir
 D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/test.dir
 D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/edit_cache.dir
 D:/source/ASTra/out-win/libs/gf_apt/CMakeFiles/rebuild_cache.dir
+D:/source/ASTra/out-win/libs/gf_dat/CMakeFiles/gf_dat.dir
+D:/source/ASTra/out-win/libs/gf_dat/CMakeFiles/test.dir
+D:/source/ASTra/out-win/libs/gf_dat/CMakeFiles/edit_cache.dir
+D:/source/ASTra/out-win/libs/gf_dat/CMakeFiles/rebuild_cache.dir
 D:/source/ASTra/out-win/apps/CMakeFiles/test.dir
 D:/source/ASTra/out-win/apps/CMakeFiles/edit_cache.dir
 D:/source/ASTra/out-win/apps/CMakeFiles/rebuild_cache.dir

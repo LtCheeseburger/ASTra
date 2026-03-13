@@ -44,6 +44,7 @@ Minimum tooling:
 - Ninja or another supported CMake generator
 - Qt 6 Widgets
 - Git
+- zlib
 
 Third-party libraries such as `spdlog`, `nlohmann/json`, and `Catch2` are pulled through CMake `FetchContent`.
 
@@ -52,9 +53,8 @@ Third-party libraries such as `spdlog`, `nlohmann/json`, and `Catch2` are pulled
 ### Windows example
 
 ```powershell
-cmake -S . -B out-win -G Ninja -DGF_BUILD_GUI=ON -DGF_BUILD_TESTS=ON
-cmake --build out-win
-ctest --test-dir out-win --output-on-failure
+cmake -S . -B out-win
+cmake --build out-win --target gf_toolsuite_gui -j 8
 ```
 
 ### Run

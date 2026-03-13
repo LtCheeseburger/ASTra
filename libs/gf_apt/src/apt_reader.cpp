@@ -1,9 +1,11 @@
 #include <gf/apt/apt_reader.hpp>
 
 #include <filesystem>
+#include <algorithm>
 #include <fstream>
 #include <string_view>
 #include <cstring>
+#include <unordered_map>
 
 namespace gf::apt {
 
@@ -68,76 +70,93 @@ static std::uint64_t file_size_u64(const std::filesystem::path& p, std::string* 
 }
 
 
-static void parse_frame_placements(const std::vector<std::uint8_t>& aptBuf,
-                                   std::uint64_t itemsOffset,
-                                   std::uint32_t itemCount,
-                                   std::vector<AptPlacement>* outPlacements) {
-  if (!outPlacements || !itemsOffset || !itemCount) return;
+static AptPlacement parse_place_object(const std::vector<std::uint8_t>& aptBuf,
+                                      std::uint64_t itemPtr) {
+  AptPlacement placement;
+  placement.offset = itemPtr;
+  placement.flags = read_u32be(aptBuf.data() + itemPtr + 4);
+  placement.depth = static_cast<std::uint32_t>(read_i32be(aptBuf.data() + itemPtr + 8));
+
+  const bool hasCharacter = (placement.flags & 0x2) != 0;
+  const bool hasMatrix    = (placement.flags & 0x4) != 0;
+
+  if (hasCharacter) placement.character = static_cast<std::uint32_t>(read_i32be(aptBuf.data() + itemPtr + 12));
+  else placement.character = 0xFFFFFFFFu;
+
+  if (hasMatrix) {
+    placement.transform.scale_x       = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 16));
+    placement.transform.rotate_skew_0 = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 20));
+    placement.transform.rotate_skew_1 = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 24));
+    placement.transform.scale_y       = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 28));
+    placement.transform.x             = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 32));
+    placement.transform.y             = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 36));
+  }
+
+  const std::uint32_t color = read_u32be(aptBuf.data() + itemPtr + 40);
+  placement.color_transform.add_r = static_cast<double>((color >> 24) & 0xFF);
+  placement.color_transform.add_g = static_cast<double>((color >> 16) & 0xFF);
+  placement.color_transform.add_b = static_cast<double>((color >> 8) & 0xFF);
+  placement.color_transform.add_a = static_cast<double>(color & 0xFF);
+
+  const std::uint32_t namePtr = read_u32be(aptBuf.data() + itemPtr + 52);
+  if (namePtr && namePtr < aptBuf.size()) placement.instance_name = read_cstr(aptBuf, namePtr);
+  return placement;
+}
+
+static void parse_frame_items(const std::vector<std::uint8_t>& aptBuf,
+                              std::uint64_t itemsOffset,
+                              std::uint32_t itemCount,
+                              AptFrame* outFrame) {
+  if (!outFrame || !itemsOffset || !itemCount) return;
   if (!can_read(aptBuf, itemsOffset, std::uint64_t(itemCount) * 4)) return;
 
-  constexpr std::uint32_t kFrameItemPlaceObject = 3;
-  constexpr std::uint64_t kOutputPlaceObjectSize = 64;
+  constexpr std::uint32_t kFrameItemAction          = 1;
+  constexpr std::uint32_t kFrameItemFrameLabel      = 2;
+  constexpr std::uint32_t kFrameItemPlaceObject     = 3;
+  constexpr std::uint32_t kFrameItemRemoveObject    = 4;
+  constexpr std::uint32_t kFrameItemBackgroundColor = 5;
+  constexpr std::uint32_t kFrameItemInitAction      = 8;
+  constexpr std::uint64_t kOutputPlaceObjectSize    = 64;
 
   for (std::uint32_t i = 0; i < itemCount; ++i) {
     const std::uint64_t ptrOff = itemsOffset + std::uint64_t(i) * 4;
     const std::uint32_t itemPtr = read_u32be(aptBuf.data() + ptrOff);
     if (!itemPtr || !can_read(aptBuf, itemPtr, 4)) continue;
 
+    AptFrameItem item;
+    item.offset = itemPtr;
     const std::uint32_t itemType = read_u32be(aptBuf.data() + itemPtr + 0);
-    if (itemType != kFrameItemPlaceObject) continue;
-    if (!can_read(aptBuf, itemPtr, kOutputPlaceObjectSize)) continue;
+    item.kind = static_cast<AptFrameItemKind>(itemType);
 
-    // PlaceObjectFlags (bits after read_u32be host-endian conversion):
-    //   bit 0 (0x01): PlaceFlagMove        — update existing object at depth
-    //   bit 1 (0x02): PlaceFlagHasCharacter — character field is valid
-    //   bit 2 (0x04): PlaceFlagHasMatrix    — transform fields are valid
-    //   bit 3 (0x08): PlaceFlagHasColorTransform
-    //   bit 5 (0x20): PlaceFlagHasName
-    const std::uint32_t flags = read_u32be(aptBuf.data() + itemPtr + 4);
-    const bool hasCharacter = (flags & 0x2) != 0;
-    const bool hasMatrix    = (flags & 0x4) != 0;
-
-    // If the placement has no character reference and no matrix it is a
-    // display-list update command; we can't render it without a stateful
-    // display list, so skip it for the static single-frame preview.
-    if (!hasCharacter && !hasMatrix) continue;
-
-    AptPlacement placement;
-    placement.offset = itemPtr;
-    placement.flags = flags;
-    placement.depth = static_cast<std::uint32_t>(read_i32be(aptBuf.data() + itemPtr + 8));
-
-    // Only read the character field when the flag says it is present.
-    // When absent, the placement updates an existing depth slot — leave
-    // character at sentinel value 0xFFFFFFFF so the renderer knows to skip it.
-    if (hasCharacter) {
-      placement.character = static_cast<std::uint32_t>(read_i32be(aptBuf.data() + itemPtr + 12));
-    } else {
-      placement.character = 0xFFFFFFFFu; // sentinel: "no new character"
+    switch (itemType) {
+      case kFrameItemPlaceObject:
+        if (can_read(aptBuf, itemPtr, kOutputPlaceObjectSize)) {
+          item.placement = parse_place_object(aptBuf, itemPtr);
+          outFrame->placements.push_back(item.placement);
+        }
+        break;
+      case kFrameItemRemoveObject:
+        if (can_read(aptBuf, itemPtr, 8)) item.remove_depth = static_cast<std::uint32_t>(read_i32be(aptBuf.data() + itemPtr + 4));
+        break;
+      case kFrameItemFrameLabel: {
+        if (can_read(aptBuf, itemPtr, 8)) {
+          const std::uint32_t strPtr = read_u32be(aptBuf.data() + itemPtr + 4);
+          if (strPtr && strPtr < aptBuf.size()) item.label = read_cstr(aptBuf, strPtr);
+        }
+        break;
+      }
+      case kFrameItemBackgroundColor:
+        if (can_read(aptBuf, itemPtr, 8)) item.background_rgba = read_u32be(aptBuf.data() + itemPtr + 4);
+        break;
+      case kFrameItemInitAction:
+        if (can_read(aptBuf, itemPtr, 8)) item.init_sprite = read_u32be(aptBuf.data() + itemPtr + 4);
+        break;
+      case kFrameItemAction:
+      default:
+        break;
     }
 
-    if (hasMatrix) {
-      placement.transform.scale_x       = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 16));
-      placement.transform.rotate_skew_0 = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 20));
-      placement.transform.rotate_skew_1 = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 24));
-      placement.transform.scale_y       = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 28));
-      placement.transform.x             = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 32));
-      placement.transform.y             = static_cast<double>(read_f32be(aptBuf.data() + itemPtr + 36));
-    }
-    // else: transform stays as identity (default-constructed)
-
-    const std::uint32_t color = read_u32be(aptBuf.data() + itemPtr + 40);
-    placement.color_transform.add_r = static_cast<double>((color >> 24) & 0xFF);
-    placement.color_transform.add_g = static_cast<double>((color >> 16) & 0xFF);
-    placement.color_transform.add_b = static_cast<double>((color >> 8) & 0xFF);
-    placement.color_transform.add_a = static_cast<double>(color & 0xFF);
-
-    const std::uint32_t namePtr = read_u32be(aptBuf.data() + itemPtr + 52);
-    if (namePtr && namePtr < aptBuf.size()) {
-      placement.instance_name = read_cstr(aptBuf, namePtr);
-    }
-
-    outPlacements->push_back(std::move(placement));
+    outFrame->items.push_back(std::move(item));
   }
 }
 
@@ -191,7 +210,7 @@ static void parse_nested_character_frames(const std::vector<std::uint8_t>& aptBu
       fr.offset = fo;
       fr.frameitemcount = read_u32be(aptBuf.data() + fo + 0);
       fr.items_offset   = read_u32be(aptBuf.data() + fo + 4);
-      parse_frame_placements(aptBuf, fr.items_offset, fr.frameitemcount, &fr.placements);
+      parse_frame_items(aptBuf, fr.items_offset, fr.frameitemcount, &fr);
       ch->frames.push_back(std::move(fr));
     }
   }
@@ -455,7 +474,7 @@ std::optional<AptFile> read_apt_file(const std::string& apt_path,
         fr.offset = fo;
         fr.frameitemcount = read_u32be(aptBuf.data() + fo + 0);
         fr.items_offset = read_u32be(aptBuf.data() + fo + 4);
-        parse_frame_placements(aptBuf, fr.items_offset, fr.frameitemcount, &fr.placements);
+        parse_frame_items(aptBuf, fr.items_offset, fr.frameitemcount, &fr);
         out.frames.push_back(fr);
       }
     }
@@ -478,6 +497,66 @@ std::optional<AptFile> read_apt_file(const std::string& apt_path,
   // Always provide full file slice
   out.slices.push_back({"APT File", 0, aptSize});
   return out;
+}
+
+
+AptFrame build_display_list_frame(const std::vector<AptFrame>& timeline_frames,
+                                 std::size_t frame_index) {
+  AptFrame resolved;
+  if (timeline_frames.empty()) return resolved;
+  if (frame_index >= timeline_frames.size()) frame_index = timeline_frames.size() - 1;
+
+  std::unordered_map<std::uint32_t, AptPlacement> display_list;
+  for (std::size_t fi = 0; fi <= frame_index; ++fi) {
+    const AptFrame& src = timeline_frames[fi];
+    for (const auto& item : src.items) {
+      if (item.kind == AptFrameItemKind::RemoveObject) {
+        display_list.erase(item.remove_depth);
+        continue;
+      }
+      if (item.kind != AptFrameItemKind::PlaceObject) continue;
+
+      const AptPlacement& pl = item.placement;
+      auto& slot = display_list[pl.depth];
+      const bool hasMove      = (pl.flags & 0x1u) != 0;
+      const bool hasCharacter = (pl.flags & 0x2u) != 0;
+      const bool hasMatrix    = (pl.flags & 0x4u) != 0;
+      const bool hasName      = (pl.flags & 0x20u) != 0;
+
+      if (!hasMove || !slot.offset) {
+        slot = pl;
+        if (!hasCharacter) slot.character = 0xFFFFFFFFu;
+        continue;
+      }
+
+      // Flash-style move/update at an existing depth slot.
+      slot.flags = pl.flags;
+      slot.depth = pl.depth;
+      slot.offset = pl.offset;
+      if (hasCharacter) slot.character = pl.character;
+      if (hasMatrix) slot.transform = pl.transform;
+      slot.color_transform = pl.color_transform;
+      if (hasName) slot.instance_name = pl.instance_name;
+    }
+  }
+
+  resolved.index = static_cast<std::uint32_t>(frame_index);
+  const AptFrame& srcFrame = timeline_frames[frame_index];
+  resolved.frameitemcount = srcFrame.frameitemcount;
+  resolved.offset = srcFrame.offset;
+  resolved.items_offset = srcFrame.items_offset;
+  resolved.items = srcFrame.items;
+  resolved.placements.reserve(display_list.size());
+  for (auto& [depth, placement] : display_list) {
+    (void) depth;
+    if (placement.character == 0xFFFFFFFFu) continue;
+    resolved.placements.push_back(std::move(placement));
+  }
+  std::stable_sort(resolved.placements.begin(), resolved.placements.end(),
+                   [](const AptPlacement& a, const AptPlacement& b) {
+                     return a.depth < b.depth;
+                   });
+  return resolved;
 }
 
 std::optional<AptSummary> read_apt_summary(const std::string& apt_path,

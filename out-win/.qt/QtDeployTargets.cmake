@@ -14,6 +14,8 @@ set(__QT_DEPLOY_TARGET_gf_textures_FILE D:/source/ASTra/out-win/libs/gf_textures
 set(__QT_DEPLOY_TARGET_gf_textures_TYPE STATIC_LIBRARY)
 set(__QT_DEPLOY_TARGET_gf_apt_FILE D:/source/ASTra/out-win/libs/gf_apt/libgf_apt.a)
 set(__QT_DEPLOY_TARGET_gf_apt_TYPE STATIC_LIBRARY)
+set(__QT_DEPLOY_TARGET_gf_dat_FILE D:/source/ASTra/out-win/libs/gf_dat/libgf_dat.a)
+set(__QT_DEPLOY_TARGET_gf_dat_TYPE STATIC_LIBRARY)
 set(__QT_DEPLOY_TARGET_gf_cli_FILE D:/source/ASTra/out-win/apps/gf_cli/astra.exe)
 set(__QT_DEPLOY_TARGET_gf_cli_TYPE EXECUTABLE)
 set(__QT_DEPLOY_TARGET_gf_cli_RUNTIME_DLLS )

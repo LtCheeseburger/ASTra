@@ -9,3 +9,6 @@ add_subdirectory(gf_textures)
 
 # APT container support (viewer groundwork in v0.6.21.x)
 add_subdirectory(gf_apt)
+
+# DAT geometry file parser (companion to APT shape assets)
+add_subdirectory(gf_dat)

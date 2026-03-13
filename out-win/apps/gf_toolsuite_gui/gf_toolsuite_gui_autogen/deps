@@ -256,7 +256,9 @@ gf_toolsuite_gui_autogen/timestamp: \
 	C:/msys64/ucrt64/include/qt6/QtCore/QMutex \
 	C:/msys64/ucrt64/include/qt6/QtCore/QObject \
 	C:/msys64/ucrt64/include/qt6/QtCore/QPoint \
+	C:/msys64/ucrt64/include/qt6/QtCore/QPointer \
 	C:/msys64/ucrt64/include/qt6/QtCore/QRect \
+	C:/msys64/ucrt64/include/qt6/QtCore/QRectF \
 	C:/msys64/ucrt64/include/qt6/QtCore/QRegularExpression \
 	C:/msys64/ucrt64/include/qt6/QtCore/QSet \
 	C:/msys64/ucrt64/include/qt6/QtCore/QSize \
@@ -351,6 +353,7 @@ gf_toolsuite_gui_autogen/timestamp: \
 	C:/msys64/ucrt64/include/qt6/QtCore/qoverload.h \
 	C:/msys64/ucrt64/include/qt6/QtCore/qpair.h \
 	C:/msys64/ucrt64/include/qt6/QtCore/qpoint.h \
+	C:/msys64/ucrt64/include/qt6/QtCore/qpointer.h \
 	C:/msys64/ucrt64/include/qt6/QtCore/qprocessordetection.h \
 	C:/msys64/ucrt64/include/qt6/QtCore/qrect.h \
 	C:/msys64/ucrt64/include/qt6/QtCore/qrefcount.h \
@@ -434,6 +437,7 @@ gf_toolsuite_gui_autogen/timestamp: \
 	C:/msys64/ucrt64/include/qt6/QtGui/qinputmethod.h \
 	C:/msys64/ucrt64/include/qt6/QtGui/qkeysequence.h \
 	C:/msys64/ucrt64/include/qt6/QtGui/qpaintdevice.h \
+	C:/msys64/ucrt64/include/qt6/QtGui/qpainterpath.h \
 	C:/msys64/ucrt64/include/qt6/QtGui/qpalette.h \
 	C:/msys64/ucrt64/include/qt6/QtGui/qpen.h \
 	C:/msys64/ucrt64/include/qt6/QtGui/qpicture.h \
@@ -465,6 +469,10 @@ gf_toolsuite_gui_autogen/timestamp: \
 	C:/msys64/ucrt64/include/qt6/QtGui/qwindowdefs_win.h \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/QComboBox \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/QDialog \
+	C:/msys64/ucrt64/include/qt6/QtWidgets/QGraphicsEllipseItem \
+	C:/msys64/ucrt64/include/qt6/QtWidgets/QGraphicsObject \
+	C:/msys64/ucrt64/include/qt6/QtWidgets/QGraphicsRectItem \
+	C:/msys64/ucrt64/include/qt6/QtWidgets/QGraphicsScene \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/QLabel \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/QLineEdit \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/QListWidget \
@@ -481,6 +489,8 @@ gf_toolsuite_gui_autogen/timestamp: \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/qdialog.h \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/qdialogbuttonbox.h \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/qframe.h \
+	C:/msys64/ucrt64/include/qt6/QtWidgets/qgraphicsitem.h \
+	C:/msys64/ucrt64/include/qt6/QtWidgets/qgraphicsscene.h \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/qlabel.h \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/qlineedit.h \
 	C:/msys64/ucrt64/include/qt6/QtWidgets/qlistview.h \
@@ -733,9 +743,18 @@ gf_toolsuite_gui_autogen/timestamp: \
 	D:/source/ASTra/apps/gf_toolsuite_gui/src/TextEditorWindow.hpp \
 	D:/source/ASTra/apps/gf_toolsuite_gui/src/TextSyntaxHighlighter.cpp \
 	D:/source/ASTra/apps/gf_toolsuite_gui/src/TextSyntaxHighlighter.hpp \
+	D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewItem.cpp \
+	D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewItem.hpp \
+	D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewScene.cpp \
+	D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptPreviewScene.hpp \
+	D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptSelectionManager.cpp \
+	D:/source/ASTra/apps/gf_toolsuite_gui/src/apt_editor/AptSelectionManager.hpp \
 	D:/source/ASTra/apps/gf_toolsuite_gui/src/main.cpp \
 	D:/source/ASTra/libs/gf_apt/include/gf/apt/apt_reader.hpp \
+	D:/source/ASTra/libs/gf_apt/include/gf/apt/apt_renderer.hpp \
+	D:/source/ASTra/libs/gf_apt/include/gf/apt/apt_transform.hpp \
 	D:/source/ASTra/libs/gf_core/include/gf/core/AstContainerEditor.hpp \
+	D:/source/ASTra/libs/gf_dat/include/gf/dat/dat_reader.hpp \
 	D:/source/ASTra/libs/gf_models/include/gf/models/rsf.hpp \
 	D:/source/ASTra/libs/gf_models/include/gf/models/scan_result.hpp \
 	D:/source/ASTra/out-win/_deps/nlohmann_json-src/include/nlohmann/adl_serializer.hpp \

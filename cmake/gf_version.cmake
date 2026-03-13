@@ -1,10 +1,9 @@
 # Central versioning: SemVer + optional build metadata
 set(GF_VERSION_MAJOR 0)
-set(GF_VERSION_MINOR 7)
-set(GF_VERSION_PATCH 5)
+set(GF_VERSION_MINOR 8)
+set(GF_VERSION_PATCH 4)
 
-# v0.6.21.1: APT viewer groundwork (real table parsing: imports/exports/frames/characters)
-set(GF_VERSION_REV 0)
+set(GF_VERSION_REV "alpha")  # e.g. "alpha", "beta", "rc1", or empty for stable
 
 set(GF_VERSION_STRING "${GF_VERSION_MAJOR}.${GF_VERSION_MINOR}.${GF_VERSION_PATCH}.${GF_VERSION_REV}")
 

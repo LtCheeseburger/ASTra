@@ -12,6 +12,7 @@
 		"D:/source/ASTra/out-win/libs/gf_platform_ps3/cmake_install.cmake",
 		"D:/source/ASTra/out-win/libs/gf_textures/cmake_install.cmake",
 		"D:/source/ASTra/out-win/libs/gf_apt/cmake_install.cmake",
+		"D:/source/ASTra/out-win/libs/gf_dat/cmake_install.cmake",
 		"D:/source/ASTra/out-win/apps/cmake_install.cmake",
 		"D:/source/ASTra/out-win/apps/gf_cli/cmake_install.cmake",
 		"D:/source/ASTra/out-win/apps/gf_toolsuite_gui/cmake_install.cmake",

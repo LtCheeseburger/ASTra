@@ -93,6 +93,35 @@ inline std::vector<RenderNode> renderAptFrame(
                         rootPlacementIndex, parentChainLabel);
 }
 
+
+
+// Builds the cumulative display-list state for timelineFrames[0..frameIndex] and
+// renders that resolved frame. This matches Flash/SWF's place/move/remove model.
+std::vector<RenderNode> renderAptTimelineFrame(
+    const AptFile&                   aptFile,
+    const std::vector<AptFrame>&     timelineFrames,
+    std::size_t                      frameIndex,
+    const std::vector<AptCharacter>& characterTable,
+    const Transform2D&               parentTransform    = Transform2D::identity(),
+    const RenderOptions&             opts               = {},
+    int                              currentDepth       = 0,
+    int                              rootPlacementIndex = -1,
+    const std::string&               parentChainLabel   = "Root");
+
+inline std::vector<RenderNode> renderAptTimelineFrame(
+    const AptFile&               aptFile,
+    const std::vector<AptFrame>& timelineFrames,
+    std::size_t                  frameIndex,
+    const Transform2D&           parentTransform    = Transform2D::identity(),
+    const RenderOptions&         opts               = {},
+    int                          currentDepth       = 0,
+    int                          rootPlacementIndex = -1,
+    const std::string&           parentChainLabel   = "Root") {
+  return renderAptTimelineFrame(aptFile, timelineFrames, frameIndex, aptFile.characters,
+                                parentTransform, opts, currentDepth,
+                                rootPlacementIndex, parentChainLabel);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Build a Transform2D from an AptTransform (bridges apt_reader ↔ apt_transform).
