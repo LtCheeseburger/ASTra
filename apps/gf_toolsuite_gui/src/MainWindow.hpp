@@ -12,8 +12,10 @@
 #include <gf/models/rsf.hpp>
 #include <gf/core/AstContainerEditor.hpp>
 #include <gf/apt/apt_reader.hpp>
+#include <gf/apt/apt_action_inspector.hpp>
 #include <gf/dat/dat_reader.hpp>
 #include <memory>
+#include <unordered_map>
 
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -162,7 +164,8 @@ private:
                              int highlightedPlacementIndex = -1,
                              const std::vector<gf::apt::AptCharacter>* characterTable = nullptr,
                              const QString& noFrameMsg = {},
-                             bool fitToContent = false);
+                             bool fitToContent = false,
+                             bool suppressContainerMsg = false);
   std::optional<int> selectedAptFrameIndex() const;
   std::optional<int> selectedAptPlacementIndex() const;
 
@@ -183,6 +186,14 @@ private:
                                    const QTransform& worldTransform,
                                    QGraphicsScene* scene,
                                    bool debugOverlay) const;
+
+  // Builds (or returns cached) merged AptActionHints for a Sprite/Movie character.
+  // Scans the character's own timeline Action bytes plus root-movie InitAction bytes.
+  // Results are cached by charId and cleared when a new APT file is loaded.
+  const gf::apt::AptActionHints& getCachedAptHints(
+      std::uint32_t charId,
+      const gf::apt::AptCharacter& ch,
+      const std::vector<gf::apt::AptCharacter>& characterTable);
 
   void renderAptCharacterRecursive(std::uint32_t charId,
                                    const QTransform& parentTransform,
@@ -265,6 +276,15 @@ private:
   gf::gui::apt_editor::AptPreviewScene* m_aptPreviewScene = nullptr;
   gf::gui::apt_editor::AptSelectionManager* m_aptSelectionManager = nullptr;
   QAction* m_aptDebugAction = nullptr;
+  // APT zoom actions
+  QAction* m_aptZoomInAction    = nullptr;
+  QAction* m_aptZoomOutAction   = nullptr;
+  QAction* m_aptZoomFitAction   = nullptr;
+  QAction* m_aptZoom100Action   = nullptr;
+  // APT render mode
+  enum class AptRenderMode { Mixed = 0, Boxes = 1, Geometry = 2 };
+  AptRenderMode m_aptRenderMode = AptRenderMode::Mixed;
+  QComboBox* m_aptRenderModeCombo = nullptr;
   QLabel* m_aptDlStatusLabel = nullptr; // frame+DL summary shown below the preview
   // Page 0: plain text details (fallback / group / slice nodes)
   QPlainTextEdit* m_aptDetails = nullptr;
@@ -296,6 +316,7 @@ private:
   QLabel* m_aptCharFrameCountLabel = nullptr;  // frame count (Sprite/Movie only)
   QLabel* m_aptCharBoundsLabel = nullptr;      // LTRB bounds if present
   QLabel* m_aptCharImportLabel = nullptr;      // import resolution for type=0 slots
+  QPlainTextEdit* m_aptScaffoldDump = nullptr; // scaffold breakdown for runtime-only containers
   // Page 5: Frame info (read-only)
   QWidget* m_aptFramePage = nullptr;
   QLabel* m_aptFrameItemCountLabel = nullptr;
@@ -315,6 +336,9 @@ private:
   std::optional<gf::apt::AptFile> m_currentAptFile;
   bool m_aptDirty = false;
   bool m_aptUpdatingUi = false;
+  bool m_aptPreviewInProgress = false; // re-entrancy guard for refreshAptPreview
+  // Per-charId cache of merged AptActionHints. Cleared when a new APT file is loaded.
+  std::unordered_map<std::uint32_t, gf::apt::AptActionHints> m_aptHintsCache;
 
   // APT frame navigation controls
   QSpinBox* m_aptFrameSpin = nullptr;

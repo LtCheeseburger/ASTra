@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -31,18 +34,34 @@ struct AptActionString {
 // Captured without AVM1 execution — arg_strings are the pushed string literals
 // observed in the near-call window before the CALLNAMED* opcode fired.
 //
-// AVM1 argument order: args are pushed rightmost-first onto the stack, so
+// AVM1 argument order: EA scripts push args leftmost-first onto the stack, so
 // arg_strings[0] is the FIRST (leftmost) argument, e.g. symbolName for
 // attachMovie(symbolName, instanceName, depth).
+//
+// arg_numbers: numeric push values observed between the last string push and the
+// call opcode (e.g. depth integer for attachMovie, frame number for gotoAndStop).
+// Elements are in push order; index 0 = first numeric pushed.
 struct AptDetectedCall {
-  std::string              call_name;   // function name resolved from local constant pool
-  std::vector<std::string> arg_strings; // up to 4 pushed strings before the call
+  std::string              call_name;    // function name resolved from local constant pool
+  std::vector<std::string> arg_strings;  // up to 4 pushed strings before the call
+  std::vector<double>      arg_numbers;  // up to 4 pushed numeric values before the call
   bool                     from_pool = false; // call_name resolved via CONSTANTPOOL
+};
+
+// A numeric property assignment detected via push-then-SetMember pattern.
+// Emitted when a numeric constant is pushed immediately before EA_SETSTRINGMEMBER
+// (opcode 0xA7) and the member name is a known layout property (_x, _y, etc.).
+// The value cannot be verified without AVM1 execution; treat as best-effort.
+struct AptSetMemberHint {
+  std::string property;  // "_x", "_y", "_alpha", "_visible", "_xscale", "_yscale", "_rotation"
+  double      value;     // numeric value (integer or float, depending on const-pool type)
+  std::string target;    // instance name from most-recent ACTION_SETTARGET (empty = root)
 };
 
 struct AptActionHints {
   std::vector<AptActionString>  strings;        // classified, deduplicated string literals
   std::vector<AptDetectedCall>  detected_calls; // conservative call-pattern detections
+  std::vector<AptSetMemberHint> set_members;    // numeric property assignment hints
   bool has_call_patterns    = false;            // any function/method call opcode seen
   bool likely_attach_movie  = false;            // PushLiteral + near_call pattern observed
   std::uint32_t opcode_count = 0;               // total opcodes walked (0 = none reached)
@@ -62,6 +81,18 @@ struct AptActionHints {
 //   - When a call opcode is observed within 8 opcodes, all pending pushes are
 //     marked near_call=true and likely_attach_movie is set.
 //   - The pending list is cleared after 8 non-call opcodes or when a call fires.
+//
+// Numeric push detection:
+//   - CONST file items of type 2 (integer) or type 3 (float) are captured as
+//     numeric values alongside string items.
+//   - When a PUSHCONSTANT opcode references a numeric pool entry, the value is
+//     added to a pendingNums list that is flushed into AptDetectedCall.arg_numbers
+//     at each call-pattern detection.
+//   - EA inline push opcodes EA_PUSHBYTE (0xAB), EA_PUSHSHORT (0xAC), and
+//     EA_PUSHFLOAT (0xAD) are also captured when present.
+//   - A push-then-SetMember pattern (numeric push immediately before
+//     EA_SETSTRINGMEMBER 0xA7 with no intervening string push) emits an
+//     AptSetMemberHint with the property name and recovered value.
 //
 // constBuf (optional): raw bytes of the companion .const file.
 //   When provided, ACTION_CONSTANTPOOL (0x88) builds a local constant pool by
@@ -94,9 +125,15 @@ inline AptActionHints inspect_apt_actions(
   //   0x14: aptdataoffset (u32 BE)
   //   0x18: itemcount (u32 BE)
   //   0x1C: items-array ptr (u32 BE) = 0x20
-  //   0x20+: items[i] = type(u32 BE) + value(u32 BE); type 1 = string offset
+  //   0x20+: items[i] = type(u32 BE) + value(u32 BE)
+  //     type 1 = string: value is offset into constBuf (null-terminated)
+  //     type 2 = integer: value is a 32-bit signed integer (BE)
+  //     type 3 = float: value bits are an IEEE 754 single-precision float (BE)
   // constItems[i] holds the string for item i (empty for non-string / out-of-range).
+  // constNums[i] holds the numeric value for item i (NaN for non-numeric).
+  static constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
   std::vector<std::string> constItems;
+  std::vector<double>      constNums;
   if (constBuf.size() >= 0x20) {
     auto rd_be = [&](std::size_t off) -> std::uint32_t {
       if (off + 4 > constBuf.size()) return 0;
@@ -106,9 +143,10 @@ inline AptActionHints inspect_apt_actions(
     };
     const std::uint32_t itemcount = rd_be(0x18);
     constItems.reserve(std::min(itemcount, std::uint32_t(4096)));
+    constNums.reserve(constItems.capacity());
     for (std::uint32_t i = 0; i < itemcount && constItems.size() < 4096; ++i) {
       const std::size_t off = 0x20 + std::size_t(i) * 8;
-      if (off + 8 > constBuf.size()) { constItems.emplace_back(); break; }
+      if (off + 8 > constBuf.size()) { constItems.emplace_back(); constNums.push_back(kNaN); break; }
       const std::uint32_t type = rd_be(off);
       const std::uint32_t val  = rd_be(off + 4);
       if (type == 1 && val > 0 && val < constBuf.size()) {
@@ -117,15 +155,29 @@ inline AptActionHints inspect_apt_actions(
         constItems.emplace_back(
             reinterpret_cast<const char*>(constBuf.data() + val),
             reinterpret_cast<const char*>(constBuf.data() + j));
+        constNums.push_back(kNaN); // string item, not numeric
+      } else if (type == 2) {
+        // Integer constant: value field is the 32-bit signed integer.
+        constItems.emplace_back();
+        constNums.push_back(static_cast<double>(static_cast<std::int32_t>(val)));
+      } else if (type == 3) {
+        // Float constant: value field holds IEEE 754 single-precision bits (BE → host).
+        // rd_be already gives us the bits in the correct conceptual order.
+        constItems.emplace_back();
+        float f; std::memcpy(&f, &val, 4);
+        constNums.push_back(static_cast<double>(f));
       } else {
         constItems.emplace_back();
+        constNums.push_back(kNaN);
       }
     }
   }
 
   // Active local constant pool (set by ACTION_CONSTANTPOOL 0x88).
   // Maps pool slot index → string value resolved from constItems.
+  // localPoolNums: parallel numeric values (NaN for non-numeric slots).
   std::vector<std::string> localPool;
+  std::vector<double>      localPoolNums;
 
   auto read_u32le = [&](std::uint64_t off) -> std::uint32_t {
     if (off + 4 > aptBuf.size()) return 0;
@@ -148,13 +200,36 @@ inline AptActionHints inspect_apt_actions(
   std::vector<std::size_t> pendingPushIndices;
   std::uint32_t opcodesSinceLastPush = kNearCallWindow + 1;
 
+  // Pending numeric pushes. Cleared at call-pattern opcodes (same lifecycle as
+  // pendingPushIndices). Accumulated into AptDetectedCall.arg_numbers at each call.
+  std::vector<double> pendingNums;
+
+  // Last numeric push for SetMember attribution.
+  // Reset when any string (non-numeric) push occurs after it.
+  double lastNumForMember      = 0.0;
+  bool   lastNumForMemberValid = false;
+
+  // Active setTarget path (from ACTION_SETTARGET 0x8B).
+  // Persists until the next setTarget; used to attribute SetMemberHints.
+  std::string activeSetTarget;
+
   auto flush_near_calls = [&]() {
     for (auto idx : pendingPushIndices) {
       hints.strings[idx].near_call = true;
     }
     if (!pendingPushIndices.empty()) hints.likely_attach_movie = true;
     pendingPushIndices.clear();
+    pendingNums.clear();
+    lastNumForMemberValid = false;
     opcodesSinceLastPush = kNearCallWindow + 1;
+  };
+
+  // Helper: push a numeric value onto the pending numeric stack.
+  auto push_num = [&](double v) {
+    if (pendingNums.size() < 4) pendingNums.push_back(v);
+    lastNumForMember      = v;
+    lastNumForMemberValid = true;
+    opcodesSinceLastPush  = 0;
   };
 
   auto push_str = [&](std::string s, AptStringRole role) {
@@ -167,6 +242,11 @@ inline AptActionHints inspect_apt_actions(
     for (const auto& e : hints.strings) if (e.value == s) return;
     if (hints.strings.size() >= kMaxStrings) return;
     hints.strings.push_back({std::move(s), role, false});
+    // A string push (as a value/var/member) clears the numeric-SetMember context
+    // because the string now sits on top of the stack between the number and the setter.
+    // TargetPath does NOT clear it (setTarget changes context but stays off the value stack).
+    if (role != AptStringRole::TargetPath && role != AptStringRole::MemberName)
+      lastNumForMemberValid = false;
   };
 
   std::uint64_t pos = bytesOffset;
@@ -206,19 +286,45 @@ inline AptActionHints inspect_apt_actions(
       continue;
     }
 
-    // ── EA_GETSTRINGMEMBER=0xA5, EA_SETSTRINGMEMBER=0xA7 ─────────────────
-    if (op == 0xA5 || op == 0xA7) {
+    // ── EA_GETSTRINGMEMBER=0xA5 ───────────────────────────────────────────
+    // Only a READ; no numeric SetMember detection here.
+    if (op == 0xA5) {
       pos = align4(pos);
       push_str(read_str(read_u32le(pos)), AptStringRole::MemberName);
       pos += 4;
       continue;
     }
 
+    // ── EA_SETSTRINGMEMBER=0xA7 ───────────────────────────────────────────
+    // Assigns value (TOS) to a named member of the current target.
+    // If a numeric push immediately preceded this (no intervening string push),
+    // emit an AptSetMemberHint with the property name and recovered value.
+    if (op == 0xA7) {
+      pos = align4(pos);
+      const std::string memberName = read_str(read_u32le(pos));
+      pos += 4;
+      push_str(memberName, AptStringRole::MemberName);
+      if (lastNumForMemberValid && !memberName.empty()) {
+        const bool isLayoutProp =
+            memberName == "_x"        || memberName == "_y"       ||
+            memberName == "_alpha"    || memberName == "_visible"  ||
+            memberName == "_xscale"   || memberName == "_yscale"   ||
+            memberName == "_rotation" || memberName == "_width"    ||
+            memberName == "_height";
+        if (isLayoutProp)
+          hints.set_members.push_back({memberName, lastNumForMember, activeSetTarget});
+        lastNumForMemberValid = false; // consumed
+      }
+      continue;
+    }
+
     // ── ACTION_SETTARGET=0x8B ─────────────────────────────────────────────
     if (op == 0x8B) {
       pos = align4(pos);
-      push_str(read_str(read_u32le(pos)), AptStringRole::TargetPath);
+      const std::string target = read_str(read_u32le(pos));
       pos += 4;
+      push_str(target, AptStringRole::TargetPath);
+      activeSetTarget = target; // track for property attribution
       continue;
     }
 
@@ -264,13 +370,16 @@ inline AptActionHints inspect_apt_actions(
         if (op == 0x88) {
           // Establish local constant pool for PUSHCONSTANT/CALLNAMED* opcodes.
           localPool.clear();
+          localPoolNums.clear();
           localPool.reserve(count);
+          localPoolNums.reserve(count);
           for (std::uint32_t i = 0; i < count; ++i) {
             const std::uint32_t ci = read_u32le(std::uint64_t(cpd_off) + std::uint64_t(i) * 4);
             localPool.push_back(ci < constItems.size() ? constItems[ci] : std::string{});
+            localPoolNums.push_back(ci < constNums.size() ? constNums[ci] : kNaN);
           }
         } else {
-          // PUSHDATA: push each resolved string directly as a PushLiteral.
+          // PUSHDATA: push each resolved entry directly as a PushLiteral / numeric.
           for (std::uint32_t i = 0; i < count; ++i) {
             const std::uint32_t ci = read_u32le(std::uint64_t(cpd_off) + std::uint64_t(i) * 4);
             if (ci < constItems.size() && !constItems[ci].empty()) {
@@ -280,6 +389,8 @@ inline AptActionHints inspect_apt_actions(
                 pendingPushIndices.push_back(hints.strings.size() - 1);
                 opcodesSinceLastPush = 0;
               }
+            } else if (ci < constNums.size() && !std::isnan(constNums[ci])) {
+              push_num(constNums[ci]);
             }
           }
         }
@@ -288,9 +399,17 @@ inline AptActionHints inspect_apt_actions(
     }
 
     // ── ALIGN + 4-byte int operand ─────────────────────────────────────────
+    // 0x81=GotoFrame, 0x99=Jump, 0x9D=If, 0xB8=EA jump variant, 0x9F=GotoFrame2,
+    // 0x94=With, 0x87=StoreRegister, 0x8A=WaitForFrame2,
+    // 0xAD=EA_PUSHFLOAT (ALIGN + 4-byte LE float).
     if (op == 0x81 || op == 0x99 || op == 0x9D || op == 0xB8 || op == 0x9F
-                   || op == 0x94 || op == 0x87 || op == 0x8A) {
+                   || op == 0x94 || op == 0x87 || op == 0x8A || op == 0xAD) {
       pos = align4(pos);
+      if (op == 0xAD && pos + 3 < aptBuf.size()) {
+        const std::uint32_t u = read_u32le(pos);
+        float f; std::memcpy(&f, &u, 4);
+        push_num(static_cast<double>(f));
+      }
       pos += 4;
       continue;
     }
@@ -314,7 +433,7 @@ inline AptActionHints inspect_apt_actions(
       const std::string callName = (idx < localPool.size()) ? localPool[idx] : std::string{};
       if (!callName.empty()) {
         // Snapshot arg_strings from the pending push queue.
-        // AVM1 pushes args rightmost-first, so pendingPushIndices[0] = first (leftmost) arg.
+        // AVM1 pushes args leftmost-first, so pendingPushIndices[0] = first argument.
         AptDetectedCall dc;
         dc.call_name = callName;
         dc.from_pool = true;
@@ -323,6 +442,11 @@ inline AptActionHints inspect_apt_actions(
           if (argIdx < hints.strings.size())
             dc.arg_strings.push_back(hints.strings[argIdx].value);
         }
+        // Snapshot numeric args.
+        for (double n : pendingNums) {
+          if (dc.arg_numbers.size() >= 4) break;
+          dc.arg_numbers.push_back(n);
+        }
         hints.detected_calls.push_back(std::move(dc));
         push_str(callName, AptStringRole::FunctionName);
       }
@@ -330,7 +454,7 @@ inline AptActionHints inspect_apt_actions(
       continue;
     }
 
-    // ── EA_PUSHCONSTANT (0xA2): 1-byte local-pool index → PushLiteral ────
+    // ── EA_PUSHCONSTANT (0xA2): 1-byte local-pool index → PushLiteral/numeric
     if (op == 0xA2) {
       const std::uint8_t idx = (pos < aptBuf.size()) ? aptBuf[pos] : 0;
       pos += 1;
@@ -341,6 +465,8 @@ inline AptActionHints inspect_apt_actions(
           pendingPushIndices.push_back(hints.strings.size() - 1);
           opcodesSinceLastPush = 0;
         }
+      } else if (idx < localPoolNums.size() && !std::isnan(localPoolNums[idx])) {
+        push_num(localPoolNums[idx]);
       }
       continue;
     }
@@ -364,12 +490,17 @@ inline AptActionHints inspect_apt_actions(
     }
 
     // ── Other 1-byte operand opcodes ─────────────────────────────────────
-    if (op == 0xB5 || op == 0xB9) {
+    // 0xB5, 0xB9: EA register / misc 1-byte operand.
+    // 0xAB: EA_PUSHBYTE — push signed 8-bit integer literal.
+    if (op == 0xB5 || op == 0xB9 || op == 0xAB) {
+      if (op == 0xAB && pos < aptBuf.size()) {
+        push_num(static_cast<double>(static_cast<std::int8_t>(aptBuf[pos])));
+      }
       pos += 1;
       continue;
     }
 
-    // ── EA_PUSHWORDCONSTANT (0xA3): 2-byte LE pool index → PushLiteral ──
+    // ── EA_PUSHWORDCONSTANT (0xA3): 2-byte LE pool index → PushLiteral/numeric
     if (op == 0xA3) {
       const std::uint16_t idx =
           (pos + 1 < aptBuf.size())
@@ -383,12 +514,21 @@ inline AptActionHints inspect_apt_actions(
           pendingPushIndices.push_back(hints.strings.size() - 1);
           opcodesSinceLastPush = 0;
         }
+      } else if (idx < localPoolNums.size() && !std::isnan(localPoolNums[idx])) {
+        push_num(localPoolNums[idx]);
       }
       continue;
     }
 
     // ── 2-byte operand opcodes ─────────────────────────────────────────────
-    if (op == 0xB6) {
+    // 0xB6: EA misc 2-byte operand.
+    // 0xAC: EA_PUSHSHORT — push signed 16-bit LE integer literal.
+    if (op == 0xB6 || op == 0xAC) {
+      if (op == 0xAC && pos + 1 < aptBuf.size()) {
+        const std::int16_t sv = static_cast<std::int16_t>(
+            std::uint16_t(aptBuf[pos]) | (std::uint16_t(aptBuf[pos + 1]) << 8));
+        push_num(static_cast<double>(sv));
+      }
       pos += 2;
       continue;
     }

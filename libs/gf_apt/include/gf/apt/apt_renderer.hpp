@@ -30,7 +30,11 @@ struct RenderNode {
   Kind        kind        = Kind::Unknown;
   std::uint32_t characterId = 0;
   std::uint32_t placementDepth = 0;   // depth value from the placement record
-  std::string instanceName;            // may be empty
+  std::string instanceName;            // APT placement instance_name (may be empty)
+
+  // Human-readable resolved names (set by the GUI layer; empty when unknown).
+  std::string symbolName;   // export/import symbol name, e.g. "Screen", "CLOCK_PANEL"
+  std::string importRef;    // cross-file import reference, e.g. "ui_common/CLOCK_PANEL"
 
   Transform2D worldTransform;          // accumulated transform to scene space
   std::optional<AptBounds> localBounds; // character's own bounds, if known

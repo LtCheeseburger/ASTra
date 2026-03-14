@@ -291,6 +291,25 @@ static void parse_character_table_into(const std::vector<std::uint8_t>& aptBuf,
   }
 }
 
+// rebuild_binary() — in-place patch model
+//
+// SAFE to edit and round-trip (fields patched directly into original_apt):
+//   AptSummary::screensizex/screensizey          (OutputMovie header +36/+40)
+//   AptPlacement::depth                          (PlaceObject +8)
+//   AptPlacement::character                      (PlaceObject +12)
+//   AptPlacement::flags                          (PlaceObject +4)
+//   AptPlacement::transform (scale_x/y, rotate_skew_0/1, x, y)  (+16..+36)
+//
+// NOT patched — in-memory changes do NOT persist to the saved file:
+//   AptPlacement::instance_name  — pointer-backed string, cannot relocate in-place
+//   AptImport::movie / AptImport::name  — same: pointer-backed
+//   AptExport::name              — same: pointer-backed
+//   Frame labels / FrameLabel items    — string data not relocated
+//   Action bytecode bytes              — read-only, never touched
+//   Character type / bounds / signature — structural, not editable
+//
+// The buffer is never resized; only values at existing AptPlacement::offset
+// absolute positions are overwritten.
 std::vector<std::uint8_t> AptFile::rebuild_binary() const {
   std::vector<std::uint8_t> buf = original_apt;
   if (buf.empty()) return buf;

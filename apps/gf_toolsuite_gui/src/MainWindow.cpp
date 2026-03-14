@@ -80,6 +80,8 @@
 #include <QPen>
 #include <QBrush>
 #include <QPainter>
+#include <QScopeGuard>
+#include <QSignalBlocker>
 
 #include "GuiSettings.hpp"
 #include "apt_editor/AptPreviewScene.hpp"
@@ -103,6 +105,9 @@ static constexpr int kAptRolePlacementIndex = Qt::UserRole + 14;
 
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <numeric>
 #include <fstream>
 
 #include <cctype>
@@ -127,16 +132,67 @@ static constexpr int kAptRolePlacementIndex = Qt::UserRole + 14;
 namespace {
 
 class AptPreviewView final : public QGraphicsView {
+  Q_OBJECT
  public:
-  using QGraphicsView::QGraphicsView;
+  explicit AptPreviewView(QWidget* parent = nullptr)
+      : QGraphicsView(parent) {
+    setTransformationAnchor(AnchorUnderMouse);
+    setResizeAnchor(AnchorViewCenter);
+    setDragMode(QGraphicsView::ScrollHandDrag);
+    setMouseTracking(true);
+  }
+
+  // Fit content to view (called after initial load and by the Fit toolbar button).
+  void fitContent() {
+    if (scene() && !scene()->items().isEmpty())
+      fitInView(scene()->itemsBoundingRect().adjusted(-20, -20, 20, 20), Qt::KeepAspectRatio);
+    else if (scene())
+      fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
+    m_fitActive = true;
+  }
+
+  void zoomTo100() {
+    resetTransform();
+    m_fitActive = false;
+  }
+
+  void zoomBy(double factor) {
+    const double current = transform().m11(); // uniform scale
+    const double next = current * factor;
+    if (next < 0.05 || next > 50.0) return;
+    scale(factor, factor);
+    m_fitActive = false;
+  }
 
  protected:
   void resizeEvent(QResizeEvent* event) override {
     QGraphicsView::resizeEvent(event);
-    if (scene()) {
-      fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
+    if (m_fitActive && scene())
+      fitContent();
+  }
+
+  void wheelEvent(QWheelEvent* event) override {
+    if (event->modifiers() & Qt::ControlModifier) {
+      const double factor = (event->angleDelta().y() > 0) ? 1.18 : 1.0 / 1.18;
+      zoomBy(factor);
+      event->accept();
+    } else {
+      QGraphicsView::wheelEvent(event);
     }
   }
+
+  void mouseDoubleClickEvent(QMouseEvent* event) override {
+    // Center the view on the topmost item under the cursor.
+    const QList<QGraphicsItem*> its = items(event->pos());
+    if (!its.isEmpty()) {
+      centerOn(its.first());
+      m_fitActive = false;
+    }
+    QGraphicsView::mouseDoubleClickEvent(event);
+  }
+
+ private:
+  bool m_fitActive = true; // true = re-fit on resize
 };
 
 static const char* ddsFormatName(gf::textures::DdsFormat f) {
@@ -170,10 +226,22 @@ namespace gf::gui {
 
 static QString aptPlacementValueText(const gf::apt::AptPlacement& pl);
 static QString aptPlacementDetailText(const gf::apt::AptPlacement& pl, const QString& ownerLabel, int frameIndex, int placementIndex);
+static QString aptPlacementTreeLabel(const gf::apt::AptPlacement& pl);
 
 
 static QString aptPlacementValueText(const gf::apt::AptPlacement& pl) {
   return QString("depth %1").arg(pl.depth);
+}
+
+// Primary label for a placement node in the APT tree.
+// Format (Ion-debugger style): "mcTitle (C42)" when an instance name is present,
+// "C42  D3" (charId + depth) otherwise.
+static QString aptPlacementTreeLabel(const gf::apt::AptPlacement& pl) {
+  if (!pl.instance_name.empty())
+    return QString("%1  (C%2)")
+        .arg(QString::fromStdString(pl.instance_name))
+        .arg(pl.character);
+  return QString("C%1  D%2").arg(pl.character).arg(pl.depth);
 }
 
 static QString aptPlacementDetailText(const gf::apt::AptPlacement& pl, const QString& ownerLabel, int frameIndex, int placementIndex) {
@@ -1873,6 +1941,60 @@ textTab->addAction(m_textSaveShortcutAction);
   m_aptDebugAction->setChecked(false);
   m_aptDebugAction->setToolTip("Show placement origins, bounding boxes, and character IDs for all nested sprites");
   connect(m_aptDebugAction, &QAction::toggled, this, [this](bool) { refreshAptPreview(); });
+
+  m_aptToolbar->addSeparator();
+
+  m_aptZoomFitAction = m_aptToolbar->addAction("Fit");
+  m_aptZoomFitAction->setToolTip("Fit preview content to view (F)");
+  m_aptZoomFitAction->setShortcut(QKeySequence(Qt::Key_F));
+  connect(m_aptZoomFitAction, &QAction::triggered, this, [this]() {
+    if (auto* v = qobject_cast<AptPreviewView*>(m_aptPreviewView)) v->fitContent();
+  });
+
+  m_aptZoom100Action = m_aptToolbar->addAction("100%");
+  m_aptZoom100Action->setToolTip("Reset to 1:1 zoom (Ctrl+0)");
+  m_aptZoom100Action->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+  connect(m_aptZoom100Action, &QAction::triggered, this, [this]() {
+    if (auto* v = qobject_cast<AptPreviewView*>(m_aptPreviewView)) v->zoomTo100();
+  });
+
+  m_aptZoomInAction = m_aptToolbar->addAction("+");
+  m_aptZoomInAction->setToolTip("Zoom in (Ctrl++)");
+  m_aptZoomInAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal));
+  connect(m_aptZoomInAction, &QAction::triggered, this, [this]() {
+    if (auto* v = qobject_cast<AptPreviewView*>(m_aptPreviewView)) v->zoomBy(1.25);
+  });
+
+  m_aptZoomOutAction = m_aptToolbar->addAction("\u2212"); // minus sign
+  m_aptZoomOutAction->setToolTip("Zoom out (Ctrl+-)");
+  m_aptZoomOutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
+  connect(m_aptZoomOutAction, &QAction::triggered, this, [this]() {
+    if (auto* v = qobject_cast<AptPreviewView*>(m_aptPreviewView)) v->zoomBy(1.0 / 1.25);
+  });
+
+  m_aptToolbar->addSeparator();
+
+  {
+    auto* lbl = new QLabel(" Render: ");
+    lbl->setStyleSheet("color: #aaa; font-size: 11px;");
+    m_aptToolbar->addWidget(lbl);
+  }
+  m_aptRenderModeCombo = new QComboBox;
+  m_aptRenderModeCombo->addItem("Mixed",    static_cast<int>(AptRenderMode::Mixed));
+  m_aptRenderModeCombo->addItem("Boxes",    static_cast<int>(AptRenderMode::Boxes));
+  m_aptRenderModeCombo->addItem("Geometry", static_cast<int>(AptRenderMode::Geometry));
+  m_aptRenderModeCombo->setToolTip(
+      "Mixed: box outlines + DAT geometry\n"
+      "Boxes: outlines only (no DAT triangles)\n"
+      "Geometry: DAT triangles only (hides box for Image nodes)");
+  m_aptToolbar->addWidget(m_aptRenderModeCombo);
+  connect(m_aptRenderModeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+          this, [this](int) {
+    m_aptRenderMode = static_cast<AptRenderMode>(
+        m_aptRenderModeCombo->currentData().toInt());
+    refreshAptPreview();
+  });
+
   aptLayout->addWidget(m_aptToolbar, 0);
 
   auto* aptSplit = new QSplitter(Qt::Horizontal, m_aptTab);
@@ -1902,7 +2024,7 @@ textTab->addAction(m_textSaveShortcutAction);
   m_aptPreviewView = new AptPreviewView(m_aptRightPane);
   m_aptPreviewView->setScene(m_aptPreviewScene);
   m_aptPreviewView->setRenderHint(QPainter::Antialiasing, true);
-  m_aptPreviewView->setDragMode(QGraphicsView::NoDrag);
+  // DragMode is ScrollHandDrag (set in AptPreviewView constructor for pan support).
   m_aptPreviewView->setAlignment(Qt::AlignCenter);
   m_aptPreviewView->setMinimumHeight(260);
   m_aptPreviewView->setFrameShape(QFrame::StyledPanel);
@@ -2014,6 +2136,15 @@ textTab->addAction(m_textSaveShortcutAction);
     form->addRow("Frames",       m_aptCharFrameCountLabel);
     form->addRow("Bounds",       m_aptCharBoundsLabel);
     form->addRow("Import",       m_aptCharImportLabel);
+    // Scaffold breakdown — shown only for frameless Sprite/Movie containers.
+    m_aptScaffoldDump = new QPlainTextEdit(page);
+    m_aptScaffoldDump->setReadOnly(true);
+    m_aptScaffoldDump->setFont(mono);
+    m_aptScaffoldDump->setMinimumHeight(60);
+    m_aptScaffoldDump->setMaximumHeight(200);
+    m_aptScaffoldDump->setPlaceholderText("(scaffold breakdown for runtime-only containers)");
+    m_aptScaffoldDump->setVisible(false);
+    form->addRow("Scaffold", m_aptScaffoldDump);
   }
 
   // Page 5 — Frame info (read-only)
@@ -5830,8 +5961,10 @@ void MainWindow::clearAptViewer() {
   if (m_aptSelectionManager) m_aptSelectionManager->clearSelection();
   if (m_aptPreviewScene) { m_aptPreviewScene->clearEditorOverlay(); m_aptPreviewScene->clear(); }
   m_currentAptFile.reset();
+  m_aptHintsCache.clear();
   m_aptDirty = false;
   m_aptUpdatingUi = false;
+  m_aptPreviewInProgress = false;
   m_aptCurrentFrameIndex = 0;
   m_aptCharPreviewIdx = -1;
   m_aptIsEmbedded = false;
@@ -6008,9 +6141,7 @@ bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QStrin
     auto* frameItem = addLeaf(framesNode, frameName, QString::number(fr.frameitemcount), detail, kAptNodeFrame, static_cast<int>(i), 0, -1);
     for (std::size_t p = 0; p < fr.placements.size(); ++p) {
       const auto& pl = fr.placements[p];
-      const QString plName = pl.instance_name.empty() ? QString("Placement %1").arg(qulonglong(p))
-                                                      : QString("Placement %1 — %2").arg(qulonglong(p)).arg(QString::fromStdString(pl.instance_name));
-      addLeaf(frameItem, plName, aptPlacementValueText(pl),
+      addLeaf(frameItem, aptPlacementTreeLabel(pl), aptPlacementValueText(pl),
               aptPlacementDetailText(pl, "Root Movie", static_cast<int>(i), static_cast<int>(p)),
               kAptNodePlacement, static_cast<int>(i), 0, -1, static_cast<int>(p));
     }
@@ -6103,9 +6234,7 @@ bool MainWindow::populateAptViewerFromFiles(const QString& aptPath, const QStrin
                                   frameDetail, kAptNodeFrame, static_cast<int>(fi), 1, static_cast<int>(i));
         for (std::size_t p = 0; p < fr.placements.size(); ++p) {
           const auto& pl = fr.placements[p];
-          const QString plName = pl.instance_name.empty() ? QString("Placement %1").arg(qulonglong(p))
-                                                          : QString("Placement %1 — %2").arg(qulonglong(p)).arg(QString::fromStdString(pl.instance_name));
-          addLeaf(frameItem, plName, aptPlacementValueText(pl),
+          addLeaf(frameItem, aptPlacementTreeLabel(pl), aptPlacementValueText(pl),
                   aptPlacementDetailText(pl, QString("Character %1").arg(qulonglong(i)), static_cast<int>(fi), static_cast<int>(p)),
                   kAptNodePlacement, static_cast<int>(fi), 1, static_cast<int>(i), static_cast<int>(p));
         }
@@ -6232,7 +6361,18 @@ static void logAptSpriteTree(
   (void)aptFile; // reserved for future use (e.g. import resolution)
 }
 
-// Converts a flat RenderNode list (from gf::apt::renderAptFrame) into QGraphicsItems.
+// ---------------------------------------------------------------------------
+// drawRenderNodeToScene — converts one RenderNode to QGraphicsItems.
+//
+// Label strategy (P1):
+//   best name = symbolName  (export/import symbol, e.g. "Screen")
+//             → instanceName (APT placement name, e.g. "bg")
+//             → "C{charId}"  (fallback)
+//   Prefix shows charId + best name: "C119 Screen", "C42 bg", "C7"
+//   importRef shown for cross-file imports: "import ui_common/CLOCK_PANEL"
+//
+// Tooltips (P2): each primary rect/poly item gets a rich tooltip.
+// ---------------------------------------------------------------------------
 static void drawRenderNodeToScene(
     const gf::apt::RenderNode& node,
     int highlightRootPlacementIdx,
@@ -6242,47 +6382,89 @@ static void drawRenderNodeToScene(
   const bool isHighlighted = (node.rootPlacementIndex == highlightRootPlacementIdx
                               && highlightRootPlacementIdx >= 0);
   const QString chainLabel = QString::fromStdString(node.parentChainLabel);
-  const int nestingDepth = chainLabel.count(QStringLiteral("→"));
+  const int nestingDepth = chainLabel.count(QStringLiteral("\u2192"));
   const bool isRootLevel = (nestingDepth == 0);
 
+  // ── Best human-readable name for this node ────────────────────────────────
+  const QString symName   = QString::fromStdString(node.symbolName);
+  const QString instName  = QString::fromStdString(node.instanceName);
+  const QString impRef    = QString::fromStdString(node.importRef);
+
+  // Short label: instance name takes priority (Ion-debugger style),
+  // then symbol/export name, then bare charId.
+  // Format: "mcTitle (C42)"  /  "Screen (C42)"  /  "C42"
+  const QString shortLabel = !instName.isEmpty()
+      ? QString("%1 (C%2)").arg(instName).arg(node.characterId)
+      : !symName.isEmpty()
+      ? QString("%1 (C%2)").arg(symName).arg(node.characterId)
+      : QString("C%1").arg(node.characterId);
+
+  // ── Tooltip builder ───────────────────────────────────────────────────────
+  auto makeTooltip = [&](const char* kindStr) -> QString {
+    QString tt = QString("<b>C%1</b> — %2").arg(node.characterId).arg(QLatin1String(kindStr));
+    if (!symName.isEmpty())
+      tt += QString("<br>symbol: <b>%1</b>").arg(symName.toHtmlEscaped());
+    if (!instName.isEmpty() && instName != symName)
+      tt += QString("<br>instance: %1").arg(instName.toHtmlEscaped());
+    if (!impRef.isEmpty())
+      tt += QString("<br>import: %1").arg(impRef.toHtmlEscaped());
+    if (node.placementDepth > 0)
+      tt += QString("<br>depth: %1").arg(node.placementDepth);
+    if (node.localBounds) {
+      const auto& b = *node.localBounds;
+      tt += QString("<br>bounds: %1×%2")
+          .arg(static_cast<int>(b.right - b.left))
+          .arg(static_cast<int>(b.bottom - b.top));
+    }
+    if (debugOverlay && !chainLabel.isEmpty())
+      tt += QString("<br><small>%1</small>").arg(chainLabel.toHtmlEscaped());
+    return tt;
+  };
+
+  // ── Unknown / import placeholder ──────────────────────────────────────────
   if (node.kind == gf::apt::RenderNode::Kind::Unknown) {
     const QTransform wt = transform2DToQt(node.worldTransform);
     const QPointF origin = wt.map(QPointF(0.0, 0.0));
-    const QPen impPen(isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0, 200),
-                      isHighlighted ? 2.5 : 1.5, Qt::DashLine);
-    const QBrush impBrush(QColor(255, 140, 0, isHighlighted ? 40 : 18));
-    const QRectF impRect(0.0, 0.0, 100.0, 36.0);
+    const QColor impCol = isHighlighted ? QColor(255, 210, 64) : QColor(255, 140, 0);
+    const QPen   impPen(QColor(impCol.red(), impCol.green(), impCol.blue(), isHighlighted ? 255 : 200),
+                        isHighlighted ? 2.5 : 1.5, Qt::DashLine);
+    const QBrush impBrush(QColor(impCol.red(), impCol.green(), impCol.blue(), isHighlighted ? 40 : 22));
+    const QRectF impRect(0.0, 0.0, 120.0, 40.0);
     auto* impItem = scene->addRect(impRect, impPen, impBrush);
     impItem->setTransform(wt);
-    const QString name = node.instanceName.empty()
-        ? QString("C%1").arg(node.characterId)
-        : QString::fromStdString(node.instanceName);
-    auto* lbl = scene->addSimpleText(QString("IMPORT %1\nD%2").arg(name).arg(node.placementDepth));
+    impItem->setToolTip(makeTooltip("import placeholder"));
+
+    // Label: "C20 import ui/CLOCK" or "C20 import"
+    QString lblText = impRef.isEmpty()
+        ? QString("C%1\nimport").arg(node.characterId)
+        : QString("C%1\nimport %2").arg(node.characterId).arg(impRef);
+    if (!symName.isEmpty() && impRef.isEmpty())
+      lblText = QString("C%1 %2\nimport").arg(node.characterId).arg(symName);
+    auto* lbl = scene->addSimpleText(lblText);
+    QFont f = lbl->font(); f.setPointSizeF(7.5); lbl->setFont(f);
     lbl->setPos(origin.x() + 3.0, origin.y() + 3.0);
-    lbl->setBrush(QBrush(isHighlighted ? QColor(255, 210, 64) : QColor(255, 160, 50, 200)));
+    lbl->setBrush(QBrush(QColor(impCol.red(), impCol.green(), impCol.blue(),
+                                isHighlighted ? 255 : 210)));
     return;
   }
 
+  // ── Sprite / Movie (container) ────────────────────────────────────────────
   if (node.kind == gf::apt::RenderNode::Kind::Sprite ||
       node.kind == gf::apt::RenderNode::Kind::Movie) {
     const bool isMovie = (node.kind == gf::apt::RenderNode::Kind::Movie);
     const QTransform wt = transform2DToQt(node.worldTransform);
     const QPointF origin = wt.map(QPointF(0.0, 0.0));
-    const QColor col = isHighlighted
-        ? QColor(255, 210,  64)
-        : isMovie ? QColor(100, 160, 255, 210)
-                  : QColor(255, 140,   0, 210);
-    const QString name = node.instanceName.empty()
-        ? (debugOverlay ? QString("S#%1").arg(node.characterId)
-                        : QString("C%1").arg(node.characterId))
-        : QString::fromStdString(node.instanceName);
-    const QString typeTag = isMovie ? "MOV" : "SPR";
-    QString lbl = QString("%1 %2\nD%3").arg(typeTag, name).arg(node.placementDepth);
-    if (debugOverlay && !chainLabel.isEmpty())
-      lbl += QStringLiteral("\n%1").arg(chainLabel);
+    const QColor col = isHighlighted ? QColor(255, 210, 64)
+                     : isMovie        ? QColor( 90, 155, 255, 220)
+                                      : QColor(255, 135,  40, 220);
     const QPen   sprPen  (col, isHighlighted ? 2.0 : 1.5, Qt::DotLine);
-    const QBrush sprBrush(QColor(col.red(), col.green(), col.blue(),
-                                 isHighlighted ? 40 : 15));
+    const QBrush sprBrush(QColor(col.red(), col.green(), col.blue(), isHighlighted ? 40 : 18));
+
+    // Label: "C119 Screen" (short, no type tag unless debug)
+    const QString typeTag = isMovie ? QStringLiteral("MOV") : QStringLiteral("SPR");
+    const QString lblMain = debugOverlay
+        ? QString("[%1] %2").arg(typeTag, shortLabel)
+        : shortLabel;
 
     bool drewRect = false;
     if (node.localBounds) {
@@ -6290,15 +6472,16 @@ static void drawRenderNodeToScene(
       const qreal bw = static_cast<qreal>(b.right  - b.left);
       const qreal bh = static_cast<qreal>(b.bottom - b.top);
       if (bw > 0.0 && bh > 0.0) {
-        const QRectF boundsRect(static_cast<qreal>(b.left),
-                                static_cast<qreal>(b.top), bw, bh);
+        const QRectF boundsRect(static_cast<qreal>(b.left), static_cast<qreal>(b.top), bw, bh);
         auto* bItem = scene->addRect(boundsRect, sprPen, sprBrush);
         bItem->setTransform(wt);
-        const QPen xhPen(QColor(col.red(), col.green(), col.blue(), 160), 1.0);
+        bItem->setToolTip(makeTooltip(isMovie ? "Movie" : "Sprite"));
+        const QPen xhPen(QColor(col.red(), col.green(), col.blue(), 140), 1.0);
         scene->addLine(origin.x() - 4, origin.y(), origin.x() + 4, origin.y(), xhPen);
         scene->addLine(origin.x(), origin.y() - 4, origin.x(), origin.y() + 4, xhPen);
         const QPointF tl = wt.map(QPointF(b.left, b.top));
-        auto* lblItem = scene->addSimpleText(lbl);
+        auto* lblItem = scene->addSimpleText(lblMain);
+        QFont f = lblItem->font(); f.setPointSizeF(7.5); lblItem->setFont(f);
         lblItem->setPos(tl.x() + 3.0, tl.y() + 3.0);
         lblItem->setBrush(QBrush(col));
         drewRect = true;
@@ -6312,15 +6495,18 @@ static void drawRenderNodeToScene(
       auto* diamItem = scene->addPolygon(
           diamond,
           QPen(col, isHighlighted ? 2.0 : 1.5),
-          QBrush(QColor(col.red(), col.green(), col.blue(), isHighlighted ? 60 : 25)));
+          QBrush(QColor(col.red(), col.green(), col.blue(), isHighlighted ? 60 : 28)));
       diamItem->setPos(origin);
-      auto* lblItem = scene->addSimpleText(lbl);
+      diamItem->setToolTip(makeTooltip(isMovie ? "Movie" : "Sprite"));
+      auto* lblItem = scene->addSimpleText(lblMain);
+      QFont f = lblItem->font(); f.setPointSizeF(7.5); lblItem->setFont(f);
       lblItem->setPos(origin + QPointF(r + 2.0, -r));
       lblItem->setBrush(QBrush(col));
     }
     return;
   }
 
+  // ── Leaf node (Shape / Image / EditText / Button) ─────────────────────────
   QRectF localRect;
   if (node.localBounds) {
     const gf::apt::AptBounds& b = *node.localBounds;
@@ -6332,40 +6518,67 @@ static void drawRenderNodeToScene(
   if (!localRect.isValid() || localRect.width() < 1.0 || localRect.height() < 1.0)
     localRect = QRectF(0.0, 0.0, 120.0, 48.0);
 
+  const bool isImage    = (node.kind == gf::apt::RenderNode::Kind::Image);
+  const bool isShape    = (node.kind == gf::apt::RenderNode::Kind::Shape);
+  const bool isEditText = (node.kind == gf::apt::RenderNode::Kind::EditText);
+
   QPen pen;
   QBrush brush;
+  const char* kindStr = "leaf";
   if (isHighlighted) {
     pen   = QPen(QColor(255, 210,  64), 3.0);
     brush = QBrush(QColor(255, 210,  64, 70));
-  } else if (node.kind == gf::apt::RenderNode::Kind::Image) {
-    const int alpha = isRootLevel ? 220 : 160;
-    pen   = QPen(QColor(180, 120, 255, alpha), isRootLevel ? 2.0 : 1.0);
-    brush = QBrush(QColor(140,  80, 255, isRootLevel ? 55 : 25));
+    kindStr = "selected";
+  } else if (isImage) {
+    // Image: purple — often a texture/sprite sheet tile
+    pen   = QPen(QColor(190, 120, 255, isRootLevel ? 230 : 170), isRootLevel ? 2.0 : 1.0);
+    brush = QBrush(QColor(150,  80, 255, isRootLevel ? 55 : 28));
+    kindStr = "Image";
+  } else if (isShape) {
+    // Shape: teal — geometry
+    pen   = QPen(QColor( 60, 200, 180, isRootLevel ? 230 : 160), isRootLevel ? 1.5 : 1.0);
+    brush = QBrush(QColor( 40, 170, 150, isRootLevel ? 45 : 22));
+    kindStr = "Shape";
+  } else if (isEditText) {
+    // EditText: yellow-green — text field
+    pen   = QPen(QColor(180, 230,  80, isRootLevel ? 230 : 160), isRootLevel ? 1.5 : 1.0);
+    brush = QBrush(QColor(150, 200,  60, isRootLevel ? 40 : 18));
+    kindStr = "EditText";
   } else if (isRootLevel) {
-    pen   = QPen(QColor(140, 190, 255), 2.0);
-    brush = QBrush(QColor(100, 170, 255, 45));
+    pen   = QPen(QColor(130, 185, 255), 2.0);
+    brush = QBrush(QColor( 90, 160, 255, 45));
+    kindStr = "leaf";
   } else {
-    pen   = QPen(QColor( 80, 210, 160, 180), 1.0);
-    brush = QBrush(QColor( 60, 180, 130,  25));
+    pen   = QPen(QColor( 80, 210, 160, 170), 1.0);
+    brush = QBrush(QColor( 60, 180, 130, 22));
+    kindStr = "leaf";
   }
 
   const QTransform wt = transform2DToQt(node.worldTransform);
   auto* rectItem = scene->addRect(localRect, pen, brush);
   rectItem->setTransform(wt);
+  rectItem->setToolTip(makeTooltip(kindStr));
 
-  if (isRootLevel || debugOverlay) {
-    const QString name = node.instanceName.empty()
-        ? QString("C%1").arg(node.characterId)
-        : QString::fromStdString(node.instanceName);
-    QString label = QString("%1\nD%2/C%3").arg(name).arg(node.placementDepth).arg(node.characterId);
+  // Labels: always show on root-level items; show in debug mode for nested.
+  // In normal mode, nested items only show a label if they have a name.
+  const bool showLabel = isRootLevel || debugOverlay
+                      || !symName.isEmpty() || !instName.isEmpty();
+  if (showLabel) {
+    // Normal mode: "C42 Screen" or "C42 bg" — compact, no depth spam
+    // Debug mode: adds depth/chain info
+    QString label = shortLabel;
+    if (debugOverlay)
+      label += QString("\nD%1").arg(node.placementDepth);
     if (debugOverlay && !chainLabel.isEmpty())
       label += QString("\n%1").arg(chainLabel);
+
     const QPointF anchor = wt.map(localRect.topLeft());
     auto* textItem = scene->addSimpleText(label);
+    QFont f = textItem->font(); f.setPointSizeF(7.5); textItem->setFont(f);
     textItem->setPos(anchor.x() + 4.0, anchor.y() + 4.0);
     textItem->setBrush(QBrush(isHighlighted ? QColor(255, 235, 120)
-                                            : (isRootLevel ? QColor(220, 230, 255)
-                                                           : QColor(180, 235, 205, 210))));
+                            : isRootLevel   ? QColor(220, 228, 255)
+                                            : QColor(185, 240, 210, 220)));
   }
 }
 
@@ -6576,6 +6789,125 @@ void MainWindow::renderDatGeometryToAptScene(const gf::dat::DatImage& img,
 }
 
 
+// ── RatNode ─ Runtime Attach Tree node ────────────────────────────────────
+// Represents one reconstructed child relationship (attachMovie, duplicateMovieClip, etc.)
+// discovered by parsing AVM1 action bytecode. Defined at file scope (not inside a lambda)
+// to avoid GCC local-struct-in-lambda template instantiation restrictions.
+namespace {
+struct RatNode {
+  enum class Src : std::uint8_t {
+    AttachMovie, DuplicateMovieClip, CreateEmpty, Import, HeuristicFallback
+  };
+  static constexpr std::uint32_t kUnresolved = UINT32_MAX;
+
+  std::uint32_t charId        = kUnresolved;   // resolved charId; kUnresolved = not found
+  std::string   symbolName;                    // symbol/export name used in the attach call
+  std::string   instanceName;                  // as= instance name
+  std::string   importRef;                     // "movie/name" for cross-file imports
+  Src           source        = Src::HeuristicFallback;
+  int           tier          = 3;             // 0=leaf 1=framed 2=runtime-ctr 3=import
+  int           confidence    = 0;             // 0=low 1=medium 2=high
+  bool          resolvedLocally = true;        // false = symbol resolved via import table
+
+  int           depth         = -1;            // recovered AVM1 depth (-1 = unknown)
+
+  // Recovered property-assignment flags + values.
+  // Boolean flags are set from MemberName-role strings (presence only).
+  // Value fields are set when a numeric constant was also recovered from the
+  // push-then-SetMember pattern in the bytecode. NaN means value not known.
+  static constexpr double kNoVal = std::numeric_limits<double>::quiet_NaN();
+  bool   propXAssigned        = false;
+  double propXValue           = kNoVal;
+  bool   propYAssigned        = false;
+  double propYValue           = kNoVal;
+  bool   propAlphaAssigned    = false;
+  double propAlphaValue       = kNoVal;
+  bool   propVisibleAssigned  = false;
+  bool   propScaleAssigned    = false;
+  double propScaleValue       = kNoVal;
+  bool   propRotationAssigned = false;
+  double propRotValue         = kNoVal;
+
+  std::string gotoLabel;      // first gotoAndStop/gotoAndPlay label seen near this node
+  bool hasSubActions = false;  // a setTarget path pointed at instanceName
+
+  bool hasX() const { return propXAssigned && !std::isnan(propXValue); }
+  bool hasY() const { return propYAssigned && !std::isnan(propYValue); }
+};
+} // anonymous namespace
+
+// ---------------------------------------------------------------------------
+// getCachedAptHints — builds and caches merged AptActionHints for a charId.
+// Scans:
+//   1. All Action/InitAction byte-blocks on the character's own timeline.
+//   2. All root-movie InitAction byte-blocks that target this charId.
+// Results are stored in m_aptHintsCache[charId].  The cache is cleared
+// whenever a new APT file is loaded (clearAptViewer → m_aptHintsCache.clear()).
+// ---------------------------------------------------------------------------
+const gf::apt::AptActionHints& MainWindow::getCachedAptHints(
+    std::uint32_t charId,
+    const gf::apt::AptCharacter& ch,
+    const std::vector<gf::apt::AptCharacter>& /*characterTable*/)
+{
+  auto it = m_aptHintsCache.find(charId);
+  if (it != m_aptHintsCache.end()) return it->second;
+
+  gf::apt::AptActionHints merged;
+
+  if (m_currentAptFile && !m_currentAptFile->original_apt.empty()) {
+    const auto& aptBuf   = m_currentAptFile->original_apt;
+    const auto& constBuf = m_currentAptFile->original_const;
+
+    auto merge = [&](const gf::apt::AptActionHints& h) {
+      // Merge strings (de-dup by value).
+      for (const auto& s : h.strings) {
+        bool dup = false;
+        for (const auto& e : merged.strings) if (e.value == s.value) { dup = true; break; }
+        if (!dup) merged.strings.push_back(s);
+      }
+      // Merge detected_calls (de-dup by call_name + first arg).
+      for (const auto& dc : h.detected_calls) {
+        bool dup = false;
+        for (const auto& e : merged.detected_calls) {
+          if (e.call_name == dc.call_name &&
+              ((e.arg_strings.empty() && dc.arg_strings.empty()) ||
+               (!e.arg_strings.empty() && !dc.arg_strings.empty() &&
+                e.arg_strings[0] == dc.arg_strings[0]))) {
+            dup = true; break;
+          }
+        }
+        if (!dup) merged.detected_calls.push_back(dc);
+      }
+      // Merge set_members (de-dup by property+target).
+      for (const auto& sm : h.set_members) {
+        bool dup = false;
+        for (const auto& e : merged.set_members)
+          if (e.property == sm.property && e.target == sm.target) { dup = true; break; }
+        if (!dup) merged.set_members.push_back(sm);
+      }
+      if (h.has_call_patterns)   merged.has_call_patterns   = true;
+      if (h.likely_attach_movie) merged.likely_attach_movie  = true;
+      merged.opcode_count += h.opcode_count;
+    };
+
+    // Own timeline Action/InitAction items.
+    for (const auto& f : ch.frames)
+      for (const auto& item : f.items)
+        if (item.action_bytes_offset)
+          merge(gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset, constBuf));
+
+    // Root-movie InitAction items targeting this sprite.
+    for (const auto& f : m_currentAptFile->frames)
+      for (const auto& item : f.items)
+        if (item.kind == gf::apt::AptFrameItemKind::InitAction
+            && item.init_sprite == charId && item.action_bytes_offset)
+          merge(gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset, constBuf));
+  }
+
+  auto [ins, _] = m_aptHintsCache.emplace(charId, std::move(merged));
+  return ins->second;
+}
+
 void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
                                              const QTransform& parentTransform,
                                              const std::vector<gf::apt::AptCharacter>& characterTable,
@@ -6598,6 +6930,18 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     return nullptr;
   };
 
+  // ── Export/import name resolver (P1) ─────────────────────────────────────
+  // Returns {symbolName, importRef} for a charId using the current APT file.
+  auto resolveNames = [&](std::uint32_t cid)
+      -> std::pair<std::string, std::string> {
+    if (!m_currentAptFile) return {};
+    for (const auto& ex : m_currentAptFile->exports)
+      if (ex.character == cid) return {ex.name, {}};
+    for (const auto& im : m_currentAptFile->imports)
+      if (im.character == cid) return {im.name, im.movie + "/" + im.name};
+    return {};
+  };
+
   const gf::apt::AptCharacter* ch = resolveCharacter(charId);
   if (!ch) {
     gf::apt::RenderNode unknown;
@@ -6612,9 +6956,12 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     unknown.worldTransform.ty = static_cast<float>(parentTransform.dy());
     unknown.rootPlacementIndex = rootPlacementIndex;
     unknown.parentChainLabel = parentChainLabel.toStdString();
+    std::tie(unknown.symbolName, unknown.importRef) = resolveNames(charId);
     drawRenderNodeToScene(unknown, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
-    if (const gf::dat::DatImage* datImg = findDatImageByCharId(charId))
-      renderDatGeometryToAptScene(*datImg, parentTransform, m_aptPreviewScene, debugOverlay);
+    if (m_aptRenderMode != AptRenderMode::Boxes) {
+      if (const gf::dat::DatImage* datImg = findDatImageByCharId(charId))
+        renderDatGeometryToAptScene(*datImg, parentTransform, m_aptPreviewScene, debugOverlay);
+    }
     return;
   }
 
@@ -6631,7 +6978,16 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     leaf.localBounds = ch->bounds;
     leaf.rootPlacementIndex = rootPlacementIndex;
     leaf.parentChainLabel = parentChainLabel.toStdString();
-    drawRenderNodeToScene(leaf, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    std::tie(leaf.symbolName, leaf.importRef) = resolveNames(charId);
+    const bool isImage = (ch->type == 7);
+    const bool drawBox = (m_aptRenderMode != AptRenderMode::Geometry || !isImage);
+    const bool drawDat = (m_aptRenderMode != AptRenderMode::Boxes);
+    if (drawBox)
+      drawRenderNodeToScene(leaf, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    if (isImage && drawDat) {
+      if (const gf::dat::DatImage* datImg = findDatImageByCharId(charId))
+        renderDatGeometryToAptScene(*datImg, parentTransform, m_aptPreviewScene, debugOverlay);
+    }
     return;
   }
 
@@ -6653,15 +7009,9 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     plh.localBounds = ch->bounds;
     plh.rootPlacementIndex = rootPlacementIndex;
     plh.parentChainLabel = parentChainLabel.toStdString();
+    std::tie(plh.symbolName, plh.importRef) = resolveNames(charId);
     drawRenderNodeToScene(plh, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
     return;
-  }
-
-  if (debugOverlay) {
-    const QPointF origin = parentTransform.map(QPointF(0.0, 0.0));
-    auto* lbl = m_aptPreviewScene->addSimpleText(QStringLiteral("S#%1").arg(charId));
-    lbl->setBrush(QBrush(QColor(255, 190, 90, 200)));
-    lbl->setPos(origin + QPointF(4.0, 4.0));
   }
 
   // ── Type helpers ──────────────────────────────────────────────────────────
@@ -6709,48 +7059,8 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
       if (exp.character == charId) { exportName = exp.name; break; }
   }
 
-  // 4. Scan Action/InitAction bytecodes for inline string references and call patterns.
-  //    Uses a lightweight EA APT opcode walker — no execution, purely structural.
-  //    Each AptActionString carries: value, role (opcode context), near_call flag.
-  gf::apt::AptActionHints actionHints;
-  if (m_currentAptFile && !m_currentAptFile->original_apt.empty()) {
-    const auto& aptBuf = m_currentAptFile->original_apt;
-    auto mergeHints = [&](const gf::apt::AptActionHints& h) {
-      for (const auto& s : h.strings) {
-        bool dup = false;
-        for (const auto& e : actionHints.strings) if (e.value == s.value) { dup = true; break; }
-        if (!dup) actionHints.strings.push_back(s);
-      }
-      // Merge detected_calls (de-dup by call_name + first arg).
-      for (const auto& dc : h.detected_calls) {
-        bool dup = false;
-        for (const auto& e : actionHints.detected_calls) {
-          if (e.call_name == dc.call_name &&
-              (e.arg_strings.empty() && dc.arg_strings.empty() ||
-               (!e.arg_strings.empty() && !dc.arg_strings.empty() &&
-                e.arg_strings[0] == dc.arg_strings[0]))) {
-            dup = true; break;
-          }
-        }
-        if (!dup) actionHints.detected_calls.push_back(dc);
-      }
-      if (h.has_call_patterns)   actionHints.has_call_patterns  = true;
-      if (h.likely_attach_movie) actionHints.likely_attach_movie = true;
-      actionHints.opcode_count += h.opcode_count;
-    };
-    const auto& constBuf = m_currentAptFile->original_const;
-    // Own timeline items
-    for (const auto& f : ch->frames)
-      for (const auto& item : f.items)
-        if (item.action_bytes_offset)
-          mergeHints(gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset, constBuf));
-    // Root-movie InitAction items that target this sprite
-    for (const auto& f : m_currentAptFile->frames)
-      for (const auto& item : f.items)
-        if (item.kind == gf::apt::AptFrameItemKind::InitAction
-            && item.init_sprite == charId && item.action_bytes_offset)
-          mergeHints(gf::apt::inspect_apt_actions(aptBuf, item.action_bytes_offset, constBuf));
-  }
+  // 4. Get merged action hints for this character (cached — computed once per charId per file).
+  const gf::apt::AptActionHints& actionHints = getCachedAptHints(charId, *ch, characterTable);
 
   // ── Semantic classification of action strings ─────────────────────────────
   // Determines what each action string likely represents given the APT context.
@@ -7012,20 +7322,190 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     return ids;
   };
 
+  // ── Attach tree reconstruction ─────────────────────────────────────────────
+  // Parses detected action calls (attachMovie, duplicateMovieClip, createEmptyMovieClip)
+  // to build a structured list of runtime children in call order. Each node carries:
+  //   - resolved charId (via exports/imports), or kUnresolved if not found
+  //   - instance name for target-path binding and display labels
+  //   - recovered property-assignment hints (presence only, not values)
+  //   - gotoAndStop/gotoAndPlay label where attributable
+  //   - hasSubActions flag when a setTarget path named this instance
+  // Returns an empty vector when no instantiate calls are present (weak evidence cases).
+  auto buildAttachTree = [&]() -> std::vector<RatNode> {
+    std::vector<RatNode> tree;
+    if (actionHints.detected_calls.empty()) return tree;
+
+    // instanceName → tree index for target-path and property attribution.
+    std::unordered_map<std::string, std::size_t> instMap;
+
+    static const std::unordered_set<std::string> kInstCalls = {
+        "attachMovie", "duplicateMovieClip", "createEmptyMovieClip"
+    };
+    static const std::unordered_set<std::string> kGotoCalls = {"gotoAndStop", "gotoAndPlay"};
+    static const std::unordered_set<std::string> kKnownProps = {
+        "_x","_y","_alpha","_visible","_xscale","_yscale","_rotation","_width","_height"
+    };
+
+    // Pass 1 — one RatNode per instantiate call, in detected order.
+    for (const auto& dc : actionHints.detected_calls) {
+      if (!kInstCalls.count(dc.call_name)) continue;
+      RatNode node;
+      if (dc.call_name == "attachMovie") {
+        node.source = RatNode::Src::AttachMovie;
+        if (!dc.arg_strings.empty())         node.symbolName   = dc.arg_strings[0];
+        if (dc.arg_strings.size() > 1)       node.instanceName = dc.arg_strings[1];
+      } else if (dc.call_name == "duplicateMovieClip") {
+        node.source = RatNode::Src::DuplicateMovieClip;
+        if (!dc.arg_strings.empty())         node.symbolName   = dc.arg_strings[0];
+        if (dc.arg_strings.size() > 1)       node.instanceName = dc.arg_strings[1];
+      } else { // createEmptyMovieClip
+        node.source = RatNode::Src::CreateEmpty;
+        if (!dc.arg_strings.empty())         node.instanceName = dc.arg_strings[0];
+      }
+      // Recover depth from the first numeric argument (arg_numbers[0]).
+      // EA scripts push args left-to-right, so depth comes after the string args.
+      if (!dc.arg_numbers.empty())
+        node.depth = static_cast<int>(dc.arg_numbers[0]);
+
+      // Resolve charId: exports first, then imports.
+      if (!node.symbolName.empty() && m_currentAptFile) {
+        for (const auto& ex : m_currentAptFile->exports) {
+          if (ex.name == node.symbolName) {
+            node.charId = ex.character;
+            node.resolvedLocally = true;
+            node.confidence = 2;
+            break;
+          }
+        }
+        if (node.charId == RatNode::kUnresolved) {
+          for (const auto& im : m_currentAptFile->imports) {
+            if (im.name == node.symbolName) {
+              node.charId = im.character;
+              node.importRef = im.movie + "/" + im.name;
+              node.resolvedLocally = false;
+              node.source = RatNode::Src::Import;
+              node.confidence = 2;
+              break;
+            }
+          }
+        }
+        if (node.charId == RatNode::kUnresolved) node.confidence = 1;
+      } else if (node.source == RatNode::Src::CreateEmpty) {
+        node.confidence = 1; // known to create a container; no symbol to resolve
+      }
+
+      // Probe visual tier from the scan table.
+      if (node.charId != RatNode::kUnresolved && node.charId < fallbackScanTable.size()) {
+        const auto& c2 = fallbackScanTable[node.charId];
+        if (c2.type == 0)                       node.tier = 3;
+        else if (c2.type != 5 && c2.type != 9)  node.tier = 0;
+        else {
+          bool hp = false;
+          for (const auto& f2 : c2.frames) if (!f2.placements.empty()) { hp = true; break; }
+          node.tier = hp ? 1 : 2;
+        }
+      }
+
+      if (!node.instanceName.empty()) instMap[node.instanceName] = tree.size();
+      tree.push_back(std::move(node));
+    }
+    if (tree.empty()) return tree;
+
+    // Pass 2 — associate gotoAndStop/gotoAndPlay labels.
+    // Without full AVM1 ordering we can't know which instance each goto targets,
+    // so we assign it to the first unset high-confidence node (follows EA patterns).
+    for (const auto& dc : actionHints.detected_calls) {
+      if (!kGotoCalls.count(dc.call_name) || dc.arg_strings.empty()) continue;
+      for (auto& n : tree) {
+        if (n.confidence >= 2 && n.gotoLabel.empty()) {
+          n.gotoLabel = dc.call_name + "(\"" + dc.arg_strings[0] + "\")";
+          break;
+        }
+      }
+    }
+
+    // Pass 3 — TargetPath strings mark the corresponding instance as having sub-actions.
+    for (const auto& as : actionHints.strings) {
+      if (as.role != gf::apt::AptStringRole::TargetPath) continue;
+      auto it = instMap.find(as.value);
+      if (it != instMap.end()) tree[it->second].hasSubActions = true;
+    }
+
+    // Pass 4 — MemberName property hints attributed via last-seen TargetPath.
+    // Sequence: setTarget("inst") then MemberName(_x) → assign _x to that node.
+    // Without a prior setTarget the assignment goes to the first strong-confidence node.
+    std::string activeTarget;
+    for (const auto& as : actionHints.strings) {
+      if (as.role == gf::apt::AptStringRole::TargetPath) {
+        activeTarget = as.value;
+      } else if (as.role == gf::apt::AptStringRole::MemberName
+                 && kKnownProps.count(as.value)) {
+        RatNode* tgt = nullptr;
+        if (!activeTarget.empty()) {
+          auto it = instMap.find(activeTarget);
+          if (it != instMap.end()) tgt = &tree[it->second];
+        }
+        if (!tgt)
+          for (auto& n : tree) if (n.confidence >= 2) { tgt = &n; break; }
+        if (tgt) {
+          if      (as.value == "_x")                               tgt->propXAssigned        = true;
+          else if (as.value == "_y")                               tgt->propYAssigned        = true;
+          else if (as.value == "_alpha")                           tgt->propAlphaAssigned    = true;
+          else if (as.value == "_visible")                         tgt->propVisibleAssigned  = true;
+          else if (as.value == "_xscale" || as.value == "_yscale") tgt->propScaleAssigned    = true;
+          else if (as.value == "_rotation")                        tgt->propRotationAssigned = true;
+        }
+      }
+    }
+
+    // Pass 5 — numeric property values from AptSetMemberHints.
+    // The inspector emitted these when it detected push-then-SetMember bytecode patterns.
+    // Each hint carries a property name, the recovered numeric value, and the active
+    // setTarget instance name (or empty = root container context).
+    for (const auto& smh : actionHints.set_members) {
+      RatNode* tgt = nullptr;
+      if (!smh.target.empty()) {
+        auto it = instMap.find(smh.target);
+        if (it != instMap.end()) tgt = &tree[it->second];
+      }
+      if (!tgt)
+        for (auto& n : tree) if (n.confidence >= 2) { tgt = &n; break; }
+      if (!tgt) continue;
+      if      (smh.property == "_x")   { tgt->propXAssigned = true; tgt->propXValue = smh.value; }
+      else if (smh.property == "_y")   { tgt->propYAssigned = true; tgt->propYValue = smh.value; }
+      else if (smh.property == "_alpha")
+        { tgt->propAlphaAssigned = true; tgt->propAlphaValue = smh.value; }
+      else if (smh.property == "_xscale" || smh.property == "_yscale")
+        { tgt->propScaleAssigned = true; tgt->propScaleValue = smh.value; }
+      else if (smh.property == "_rotation")
+        { tgt->propRotationAssigned = true; tgt->propRotValue = smh.value; }
+    }
+
+    return tree;
+  };
+
   // ── Cycle protection ──────────────────────────────────────────────────────
   // track the charIds currently being rendered via runtime fallback; prevents
   // A→B→A loops that the depth guard alone cannot distinguish.
   thread_local static std::unordered_set<std::uint32_t> s_runtimeActivePath;
 
-  // ── Helper: draw the "RUNTIME M#X / S#X [annot][conf]" dashed outline ──────
+  // ── Helper: draw the runtime container outline + label ───────────────────
+  // Normal mode: "C119 Screen [runtime]" — concise, shows export name.
+  // Debug mode: adds confidence tag and annot.
   const QColor rCol = isMovieChar ? QColor(255, 100, 60, 220) : QColor(255, 160, 60, 220);
   auto drawRuntimeOutline = [&]() {
-    // Confidence suffix added after candidate collection (reconConf is set by collectCandidates).
-    const QString confTag = (reconConf == ReconConf::Strong)  ? QStringLiteral("[strong]")
-                          : (reconConf == ReconConf::Medium)  ? QStringLiteral("[export]")
-                                                              : QStringLiteral("[heuristic]");
-    const QString rLbl = QString("RUNTIME %1#%2%3%4")
-        .arg(QLatin1Char(charTypeTag)).arg(charId).arg(annot).arg(confTag);
+    // Build label: prefer export name, fall back to C{id}.
+    const QString nameStr = exportName.empty()
+        ? QString("C%1").arg(charId)
+        : QString("C%1 %2").arg(charId).arg(QString::fromStdString(exportName));
+    QString rLbl = nameStr + QStringLiteral(" [runtime]");
+    if (debugOverlay) {
+      const QString confTag = (reconConf == ReconConf::Strong) ? QStringLiteral("[strong]")
+                            : (reconConf == ReconConf::Medium) ? QStringLiteral("[export]")
+                                                               : QStringLiteral("[heuristic]");
+      rLbl += annot + confTag;
+    }
+
     const QPen   rPen  (rCol, 1.5, Qt::DashLine);
     const QBrush rBrush(QColor(rCol.red(), rCol.green(), rCol.blue(), 12));
     const QPointF origin = parentTransform.map(QPointF(0.0, 0.0));
@@ -7039,8 +7519,14 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
             QRectF(static_cast<qreal>(b.left), static_cast<qreal>(b.top), bw, bh),
             rPen, rBrush);
         rItem->setTransform(parentTransform);
+        // Tooltip on the outline box.
+        rItem->setToolTip(QString("<b>C%1</b> %2<br>runtime-only container<br>%3")
+            .arg(charId)
+            .arg(QString::fromStdString(exportName).toHtmlEscaped())
+            .arg(isMovieChar ? "Movie" : "Sprite"));
         const QPointF tl = parentTransform.map(QPointF(b.left, b.top));
         auto* lblItem = m_aptPreviewScene->addSimpleText(rLbl);
+        QFont f = lblItem->font(); f.setPointSizeF(7.5); lblItem->setFont(f);
         lblItem->setPos(tl.x() + 3.0, tl.y() + 3.0);
         lblItem->setBrush(QBrush(rCol));
         drewRect = true;
@@ -7048,16 +7534,9 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     }
     if (!drewRect) {
       auto* lblItem = m_aptPreviewScene->addSimpleText(rLbl);
+      QFont f = lblItem->font(); f.setPointSizeF(7.5); lblItem->setFont(f);
       lblItem->setPos(origin + QPointF(4.0, 4.0));
       lblItem->setBrush(QBrush(rCol));
-    }
-    // In debug mode, show the export name if available — it tells us what
-    // runtime symbol can instantiate this container.
-    if (debugOverlay && !exportName.empty()) {
-      auto* eLbl = m_aptPreviewScene->addSimpleText(
-          QString("export: %1").arg(QString::fromStdString(exportName)));
-      eLbl->setPos(origin + QPointF(4.0, 18.0));
-      eLbl->setBrush(QBrush(QColor(160, 220, 160, 200)));
     }
   };
 
@@ -7075,6 +7554,7 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     plh.localBounds = ch->bounds;
     plh.rootPlacementIndex = rootPlacementIndex;
     plh.parentChainLabel = parentChainLabel.toStdString();
+    plh.symbolName = exportName; // already resolved above
     drawRenderNodeToScene(plh, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
   };
 
@@ -7092,8 +7572,19 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
       return false;
     }
 
+    // Scene-item budget guard: bail out if the scene already has too many items.
+    // Prevents quadratic blow-up when runtime containers nest other runtime containers.
+    constexpr int kMaxSceneItems = 500;
+    if (m_aptPreviewScene->items().count() >= kMaxSceneItems) {
+      if (lg) lg->warn("[APT] {}scene item budget ({}) reached, skipping fallback for charId={}",
+                       indent.toStdString(), kMaxSceneItems, charId);
+      return false;
+    }
+
     const std::vector<std::uint32_t> visualIds = collectCandidates();
-    // reconConf is now set by collectCandidates
+    // reconConf is now set by collectCandidates.
+    // Build the attach tree from detected action calls (strong-evidence path).
+    const std::vector<RatNode> attachTree = buildAttachTree();
 
     if (lg) {
       const char* confStr = (reconConf == ReconConf::Strong) ? "strong"
@@ -7149,51 +7640,351 @@ void MainWindow::renderAptCharacterRecursive(std::uint32_t charId,
     }
     if (visualIds.empty()) return false;
 
+    // ── Per-candidate tier classification ────────────────────────────────────
+    // Tier 0 = leaf visual type (Shape/Image/EditText/Button) — produces colored rect
+    // Tier 1 = Sprite/Movie with >=1 framed placement         — recursively renders art
+    // Tier 2 = frameless Sprite/Movie (runtime container)     — produces RUNTIME box
+    // Tier 3 = import placeholder (type=0)                    — named import tile
+    //
+    // Use parallel vectors to avoid local-class-in-lambda template restrictions.
+    const std::size_t nCands = visualIds.size();
+    std::vector<int>           slotTiers    (nCands, 3);
+    std::vector<std::string>   slotSources  (nCands);
+    std::vector<std::string>   slotImportRefs(nCands);
+
+    for (std::size_t si = 0; si < nCands; ++si) {
+      const std::uint32_t c = visualIds[si];
+      // Probe tier
+      if (c < fallbackScanTable.size()) {
+        const auto& c2 = fallbackScanTable[c];
+        if (c2.type != 0 && c2.type != 5 && c2.type != 9) {
+          slotTiers[si] = 0; // leaf
+        } else if (c2.type == 5 || c2.type == 9) {
+          bool hasPlaced = false;
+          for (const auto& f2 : c2.frames) if (!f2.placements.empty()) { hasPlaced = true; break; }
+          slotTiers[si] = hasPlaced ? 1 : 2;
+        }
+        // else type==0 stays tier=3
+      }
+      // Build source label
+      if (m_currentAptFile) {
+        static const std::unordered_set<std::string> kIC = {"attachMovie","duplicateMovieClip"};
+        bool found = false;
+        for (const auto& dc : actionHints.detected_calls) {
+          if (!kIC.count(dc.call_name) || dc.arg_strings.empty()) continue;
+          const std::string& sym = dc.arg_strings[0];
+          for (const auto& ex : m_currentAptFile->exports)
+            if (ex.name == sym && ex.character == c)
+              { slotSources[si] = dc.call_name + "(\"" + sym + "\")"; found = true; break; }
+          if (found) break;
+          for (const auto& im : m_currentAptFile->imports)
+            if (im.name == sym && im.character == c)
+              { slotSources[si] = dc.call_name + "(\"" + sym + "\") [imp]"; found = true; break; }
+          if (found) break;
+        }
+        if (!found) {
+          for (const auto& as : actionHints.strings) {
+            if (as.role != gf::apt::AptStringRole::PushLiteral && !as.near_call) continue;
+            for (const auto& ex : m_currentAptFile->exports)
+              if (ex.name == as.value && ex.character == c)
+                { slotSources[si] = "str(\"" + as.value + "\")"; found = true; break; }
+            if (found) break;
+            for (const auto& im : m_currentAptFile->imports)
+              if (im.name == as.value && im.character == c)
+                { slotSources[si] = "str(\"" + as.value + "\") [imp]"; found = true; break; }
+            if (found) break;
+          }
+        }
+        if (!found)
+          slotSources[si] = (c > charId && c <= charId + kProximityWindow) ? "proximity" : "export-scan";
+      } else {
+        slotSources[si] = "heuristic";
+      }
+      // Resolve import ref for tier=3
+      if (slotTiers[si] == 3 && m_currentAptFile) {
+        for (const auto& imp : m_currentAptFile->imports)
+          if (imp.character == c) { slotImportRefs[si] = imp.movie + "/" + imp.name; break; }
+      }
+    }
+
+    // Build sorted-index array (leaves first, framed second, runtime-ctr third, imports last).
+    std::vector<std::size_t> order(nCands);
+    std::iota(order.begin(), order.end(), std::size_t(0));
+    std::stable_sort(order.begin(), order.end(),
+        [&slotTiers](std::size_t a, std::size_t b){ return slotTiers[a] < slotTiers[b]; });
+
+    // primaryCount drives secondaryYBase:
+    //   tree path  → all tree nodes are primary (action-grounded)
+    //   flat path  → tier<2 candidates are primary
+    std::size_t primaryCount = 0;
+    if (!attachTree.empty()) {
+      primaryCount = attachTree.size();
+    } else {
+      for (std::size_t si = 0; si < nCands; ++si) if (slotTiers[si] < 2) ++primaryCount;
+    }
+
     drawRuntimeOutline();
 
-    // 3-column grid layout: each child is offset by (col*xStep, row*yStep).
-    // Applied in local pre-transform space — diagnostic only, not game positions.
     constexpr std::size_t kGridCols = 3;
-    constexpr qreal       kColStep  = 160.0;
-    constexpr qreal       kRowStep  = 120.0;
+    constexpr qreal       kColStep  = 170.0;
+    constexpr qreal       kRowStep  = 130.0;
+    const std::size_t primaryRows = (primaryCount + kGridCols - 1) / kGridCols;
+    const qreal secondaryYBase    = (primaryRows > 0)
+        ? static_cast<qreal>(primaryRows) * kRowStep + 22.0
+        : 0.0;
+
     const QString childChain = parentChainLabel
         + QString(" \u2192 RUNTIME%1#%2").arg(QLatin1Char(charTypeTag)).arg(charId);
 
-    s_runtimeActivePath.insert(charId); // push cycle guard
-    for (std::size_t idx = 0; idx < visualIds.size(); ++idx) {
-      const std::uint32_t cid = visualIds[idx];
-      const std::uint8_t  ct  = (cid < fallbackScanTable.size())
+    s_runtimeActivePath.insert(charId);
+    bool addedSecSep = false;
+    std::size_t primaryIdx = 0, secondaryIdx = 0;
+
+    if (!attachTree.empty()) {
+      // ── Tree-based render path ─────────────────────────────────────────────
+      // Nodes rendered in action-call order. Instance-name labels are shown above
+      // each tile. Heuristic candidates not matched by the tree are demoted to
+      // a secondary section so they do not crowd the action-grounded children.
+
+      std::unordered_set<std::uint32_t> treeCovered;
+      for (const auto& n : attachTree)
+        if (n.charId != RatNode::kUnresolved) treeCovered.insert(n.charId);
+
+      for (std::size_t ni = 0; ni < attachTree.size(); ++ni) {
+        const RatNode& node = attachTree[ni];
+        const std::uint32_t cid = node.charId;
+        const std::uint8_t ct = (cid < fallbackScanTable.size())
+                                 ? fallbackScanTable[cid].type : 0xFF;
+        const char* ctName = (ct == 9) ? "Movie"
+                           : (ct == 5) ? "Sprite"
+                           : (ct == 7) ? "Image"
+                           : (ct == 0) ? "Import"
+                           : (ct == 0xFF) ? "?" : "Shape";
+
+        // Position: use recovered _x/_y when available; otherwise synthetic grid.
+        const qreal gridX = static_cast<qreal>(primaryIdx % kGridCols) * kColStep;
+        const qreal gridY = static_cast<qreal>(primaryIdx / kGridCols) * kRowStep;
+        ++primaryIdx;
+        const bool useRecovered = node.hasX() || node.hasY();
+        const qreal xOff = useRecovered ? (node.hasX() ? node.propXValue : gridX) : gridX;
+        const qreal yOff = useRecovered ? (node.hasY() ? node.propYValue : gridY) : gridY;
+        const QTransform childXf = parentTransform * QTransform::fromTranslate(xOff, yOff);
+
+        if (lg) {
+          const char* srcName =
+              (node.source == RatNode::Src::AttachMovie)        ? "attachMovie"
+            : (node.source == RatNode::Src::DuplicateMovieClip) ? "duplicateMovieClip"
+            : (node.source == RatNode::Src::CreateEmpty)        ? "createEmpty"
+            : (node.source == RatNode::Src::Import)             ? "import"
+                                                                : "heuristic";
+          lg->debug("[APT] {}tree[{}] {} sym=\"{}\" inst=\"{}\" C{} {} tier={} pos={}",
+                    indent.toStdString(), ni, srcName,
+                    node.symbolName, node.instanceName,
+                    cid == RatNode::kUnresolved ? 0u : cid, ctName, node.tier,
+                    useRecovered ? "recovered" : "grid");
+        }
+
+        // Instance-name label shown above every tile (not just debug mode) so
+        // the user can identify the scorebug element at a glance.
+        if (m_aptPreviewScene) {
+          const QString instLbl = node.instanceName.empty()
+              ? (QStringLiteral("C")
+                 + (cid == RatNode::kUnresolved ? QStringLiteral("?") : QString::number(cid)))
+              : (QStringLiteral("\u25B6 \"") + QString::fromStdString(node.instanceName)
+                 + QStringLiteral("\""));
+          const QPointF labelPos = parentTransform.map(QPointF(xOff + 2.0, yOff - 13.0));
+          auto* lbl = m_aptPreviewScene->addSimpleText(instLbl);
+          lbl->setPos(labelPos);
+          QFont f = lbl->font(); f.setPointSizeF(7.0); lbl->setFont(f);
+          lbl->setBrush(QBrush(QColor(120, 220, 255, 230)));
+        }
+
+        const int itemsBefore = m_aptPreviewScene ? m_aptPreviewScene->items().count() : 0;
+
+        if (cid == RatNode::kUnresolved) {
+          // Unresolved symbol or createEmpty — yellow dashed placeholder tile.
+          if (m_aptPreviewScene) {
+            const QPointF tlPos = parentTransform.map(QPointF(xOff, yOff));
+            const QColor uCol(180, 180, 60, 200);
+            m_aptPreviewScene->addRect(QRectF(tlPos.x(), tlPos.y(), 160.0, 70.0),
+                QPen(uCol, 1.5, Qt::DashLine), QBrush(QColor(180, 180, 60, 12)));
+            const QString lbl = (node.source == RatNode::Src::CreateEmpty)
+                ? (QStringLiteral("createEmpty\n\"")
+                   + QString::fromStdString(node.instanceName) + QStringLiteral("\""))
+                : (QStringLiteral("? unresolved\n\"")
+                   + QString::fromStdString(node.symbolName) + QStringLiteral("\""));
+            auto* pLbl = m_aptPreviewScene->addSimpleText(lbl);
+            pLbl->setPos(tlPos + QPointF(5.0, 4.0));
+            QFont pf = pLbl->font(); pf.setPointSizeF(7.5); pLbl->setFont(pf);
+            pLbl->setBrush(QBrush(uCol));
+          }
+        } else if (node.tier == 3 || node.source == RatNode::Src::Import) {
+          // Import tile — orange dashed-border with importRef and instance name.
+          if (m_aptPreviewScene) {
+            const QPointF tlPos = parentTransform.map(QPointF(xOff, yOff));
+            const QColor impCol(255, 150, 40, 200);
+            m_aptPreviewScene->addRect(QRectF(tlPos.x(), tlPos.y(), 160.0, 70.0),
+                QPen(impCol, 1.5, Qt::DashDotLine), QBrush(QColor(255, 130, 20, 14)));
+            const QString impName = node.importRef.empty()
+                ? QStringLiteral("C") + QString::number(cid)
+                : QString::fromStdString(node.importRef);
+            const QString instSuffix = node.instanceName.empty() ? QString()
+                : (QStringLiteral("\ninst: \"") + QString::fromStdString(node.instanceName)
+                   + QStringLiteral("\""));
+            auto* impLbl = m_aptPreviewScene->addSimpleText(
+                QStringLiteral("IMPORT\n") + impName + instSuffix);
+            impLbl->setPos(tlPos + QPointF(5.0, 4.0));
+            QFont impF = impLbl->font(); impF.setPointSizeF(7.5); impLbl->setFont(impF);
+            impLbl->setBrush(QBrush(impCol));
+          }
+        } else {
+          renderAptCharacterRecursive(cid, childXf, fallbackScanTable,
+                                      rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
+                                      recursionDepth + 1, childChain);
+        }
+
+        const int itemsAfter = m_aptPreviewScene ? m_aptPreviewScene->items().count() : 0;
+        if (lg) {
+          lg->debug("[APT] {}  +{} scene items (total {})",
+                    indent.toStdString(), itemsAfter - itemsBefore, itemsAfter);
+        }
+      }
+
+      // ── Residual heuristic candidates not matched by the tree ─────────────
+      // These are demoted to a secondary section so they do not dominate the view.
+      for (std::size_t si = 0; si < nCands; ++si) {
+        const std::size_t i = order[si];
+        const std::uint32_t cid = visualIds[i];
+        if (treeCovered.count(cid)) continue; // already in primary
+
+        if (!addedSecSep && m_aptPreviewScene) {
+          const QPointF sepPos = parentTransform.map(QPointF(0.0, secondaryYBase - 16.0));
+          auto* sep = m_aptPreviewScene->addSimpleText(
+              QStringLiteral("\u2500\u2500 heuristic / unmatched candidates \u2500\u2500"));
+          sep->setPos(sepPos);
+          QFont sf = sep->font(); sf.setPointSizeF(7.0); sep->setFont(sf);
+          sep->setBrush(QBrush(QColor(130, 130, 160, 180)));
+          addedSecSep = true;
+        }
+        const qreal xr = static_cast<qreal>(secondaryIdx % kGridCols) * kColStep;
+        const qreal yr = secondaryYBase + static_cast<qreal>(secondaryIdx / kGridCols) * kRowStep;
+        ++secondaryIdx;
+        const QTransform xfr = parentTransform * QTransform::fromTranslate(xr, yr);
+        renderAptCharacterRecursive(cid, xfr, fallbackScanTable,
+                                    rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
+                                    recursionDepth + 1, childChain);
+      }
+
+    } else {
+      // ── Flat-grid fallback (no action-call evidence; tier-sorted buckets) ──
+      for (std::size_t si = 0; si < nCands; ++si) {
+        const std::size_t    i    = order[si];
+        const std::uint32_t  cid  = visualIds[i];
+        const int            tier = slotTiers[i];
+        const std::string&   src  = slotSources[i];
+        const std::string&   impr = slotImportRefs[i];
+
+        const std::uint8_t ct = (cid < fallbackScanTable.size())
                                  ? fallbackScanTable[cid].type : 0;
-      const char* ctName = (ct == 9) ? "Movie"
-                         : (ct == 5) ? "Sprite"
-                         : (ct == 7) ? "Image"
-                         : (ct == 0) ? "Import"
-                                     : "Shape";
+        const char* ctName = (ct == 9) ? "Movie"
+                           : (ct == 5) ? "Sprite"
+                           : (ct == 7) ? "Image"
+                           : (ct == 0) ? "Import"
+                                       : "Shape";
 
-      // Resolve import name for type=0 slots so logs/overlay show something useful.
-      std::string cidImport;
-      if (ct == 0 && m_currentAptFile) {
-        for (const auto& imp : m_currentAptFile->imports)
-          if (imp.character == cid) { cidImport = imp.movie + "/" + imp.name; break; }
+        qreal xOff, yOff;
+        if (tier < 2) {
+          xOff = static_cast<qreal>(primaryIdx % kGridCols) * kColStep;
+          yOff = static_cast<qreal>(primaryIdx / kGridCols) * kRowStep;
+          ++primaryIdx;
+        } else {
+          if (!addedSecSep && m_aptPreviewScene) {
+            const QPointF sepPos = parentTransform.map(QPointF(0.0, secondaryYBase - 16.0));
+            auto* sep = m_aptPreviewScene->addSimpleText(
+                QStringLiteral("\u2500\u2500 heuristic / secondary \u2500\u2500"));
+            sep->setPos(sepPos);
+            QFont sf = sep->font(); sf.setPointSizeF(7.0); sep->setFont(sf);
+            sep->setBrush(QBrush(QColor(130, 130, 160, 180)));
+            addedSecSep = true;
+          }
+          xOff = static_cast<qreal>(secondaryIdx % kGridCols) * kColStep;
+          yOff = secondaryYBase + static_cast<qreal>(secondaryIdx / kGridCols) * kRowStep;
+          ++secondaryIdx;
+        }
+        const QTransform childTransform = parentTransform * QTransform::fromTranslate(xOff, yOff);
+
+        if (lg) {
+          lg->debug("[APT] {}scaffold[{}] C{} {} tier={} source=\"{}\" import={}",
+                    indent.toStdString(), si, cid, ctName, tier,
+                    src, impr.empty() ? "-" : impr);
+        }
+        if (debugOverlay && m_aptPreviewScene) {
+          const QString srcLbl = (tier == 3)
+              ? (QStringLiteral("\u25B6 import ")
+                 + QString::fromStdString(impr.empty()
+                                          ? std::string("C") + std::to_string(cid) : impr))
+              : (QStringLiteral("\u25B6 ") + QString::fromStdString(src));
+          const QPointF labelPos = parentTransform.map(QPointF(xOff + 2.0, yOff - 13.0));
+          auto* srcLblItem = m_aptPreviewScene->addSimpleText(srcLbl);
+          srcLblItem->setPos(labelPos);
+          QFont f = srcLblItem->font(); f.setPointSizeF(7.0); srcLblItem->setFont(f);
+          srcLblItem->setBrush(QBrush(QColor(255, 210, 80, 230)));
+        }
+
+        const int itemsBefore = m_aptPreviewScene ? m_aptPreviewScene->items().count() : 0;
+        if (tier == 3) {
+          const QPointF tlPos = parentTransform.map(QPointF(xOff, yOff));
+          const QColor impCol(255, 150, 40, 200);
+          m_aptPreviewScene->addRect(QRectF(tlPos.x(), tlPos.y(), 160.0, 70.0),
+              QPen(impCol, 1.5, Qt::DashDotLine), QBrush(QColor(255, 130, 20, 14)));
+          const QString impName = impr.empty()
+              ? QStringLiteral("C") + QString::number(cid)
+              : QString::fromStdString(impr);
+          auto* impLbl = m_aptPreviewScene->addSimpleText(
+              QStringLiteral("IMPORT\n") + impName
+              + QStringLiteral("\ncharId ") + QString::number(cid));
+          impLbl->setPos(tlPos + QPointF(5.0, 4.0));
+          QFont impF = impLbl->font(); impF.setPointSizeF(7.5); impLbl->setFont(impF);
+          impLbl->setBrush(QBrush(impCol));
+        } else {
+          renderAptCharacterRecursive(cid, childTransform, fallbackScanTable,
+                                      rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
+                                      recursionDepth + 1, childChain);
+        }
+        const int itemsAfter = m_aptPreviewScene ? m_aptPreviewScene->items().count() : 0;
+        if (lg) {
+          lg->debug("[APT] {}  +{} scene items (total {})",
+                    indent.toStdString(), itemsAfter - itemsBefore, itemsAfter);
+        }
       }
+    } // end flat-grid fallback
 
-      const qreal xOff = static_cast<qreal>(idx % kGridCols) * kColStep;
-      const qreal yOff = static_cast<qreal>(idx / kGridCols) * kRowStep;
-      const QTransform childTransform = parentTransform * QTransform::fromTranslate(xOff, yOff);
+    s_runtimeActivePath.erase(charId);
 
-      if (lg) {
-        if (cidImport.empty())
-          lg->debug("[APT] {}fallback child charId={} type={} offset=({},{})",
-                    indent.toStdString(), cid, ctName, xOff, yOff);
-        else
-          lg->debug("[APT] {}fallback child charId={} type=Import import={} offset=({},{})",
-                    indent.toStdString(), cid, cidImport, xOff, yOff);
+    if (lg) {
+      if (!attachTree.empty()) {
+        int nL=0, nF=0, nR=0, nI=0, nU=0;
+        for (const auto& n : attachTree) {
+          if      (n.tier == 0)                   ++nL;
+          else if (n.tier == 1)                   ++nF;
+          else if (n.tier == 2)                   ++nR;
+          else if (n.tier == 3)                   ++nI;
+          if      (n.charId == RatNode::kUnresolved) ++nU;
+        }
+        lg->debug("[APT] {}tree done: {} nodes — {} leaf, {} framed, {} runtime-ctr, {} import, {} unresolved",
+                  indent.toStdString(), attachTree.size(), nL, nF, nR, nI, nU);
+      } else {
+        int nL=0, nF=0, nR=0, nI=0;
+        for (std::size_t si2 = 0; si2 < nCands; ++si2) {
+          if      (slotTiers[si2] == 0) ++nL;
+          else if (slotTiers[si2] == 1) ++nF;
+          else if (slotTiers[si2] == 2) ++nR;
+          else if (slotTiers[si2] == 3) ++nI;
+        }
+        lg->debug("[APT] {}scaffold done: {} total — {} leaf, {} framed, {} runtime-ctr, {} import",
+                  indent.toStdString(), nCands, nL, nF, nR, nI);
       }
-      renderAptCharacterRecursive(cid, childTransform, fallbackScanTable,
-                                  rootPlacementIndex, highlightRootPlacementIdx, debugOverlay,
-                                  recursionDepth + 1, childChain);
     }
-    s_runtimeActivePath.erase(charId); // pop cycle guard
     return true;
   };
 
@@ -7287,9 +8078,26 @@ void MainWindow::renderAptResolvedFrameRecursive(const gf::apt::AptFrame& resolv
     node.localBounds = ch ? ch->bounds : std::optional<gf::apt::AptBounds>{};
     node.rootPlacementIndex = effectiveRootIndex;
     node.parentChainLabel = parentChainLabel.toStdString();
-    drawRenderNodeToScene(node, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
-
-    if (!ch) {
+    // Resolve export/import name for labeling (P1).
+    if (m_currentAptFile) {
+      for (const auto& ex : m_currentAptFile->exports)
+        if (ex.character == pl.character) { node.symbolName = ex.name; break; }
+      if (node.symbolName.empty()) {
+        for (const auto& im : m_currentAptFile->imports)
+          if (im.character == pl.character) {
+            node.symbolName = im.name;
+            node.importRef  = im.movie + "/" + im.name;
+            break;
+          }
+      }
+    }
+    const bool nodeIsImage = (!ch || ch->type == 7);
+    const bool drawBoxR    = (m_aptRenderMode != AptRenderMode::Geometry || !nodeIsImage);
+    const bool drawDatR    = (m_aptRenderMode != AptRenderMode::Boxes);
+    if (drawBoxR)
+      drawRenderNodeToScene(node, highlightRootPlacementIdx, debugOverlay, m_aptPreviewScene);
+    // DAT geometry fallback for unresolved or Image characters.
+    if (nodeIsImage && drawDatR) {
       if (const gf::dat::DatImage* datImg = findDatImageByCharId(pl.character))
         renderDatGeometryToAptScene(*datImg, childWorld, m_aptPreviewScene, debugOverlay);
     }
@@ -7304,11 +8112,12 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
                                        int highlightedPlacementIndex,
                                        const std::vector<gf::apt::AptCharacter>* characterTable,
                                        const QString& noFrameMsg,
-                                       bool fitToContent) {
+                                       bool fitToContent,
+                                       bool suppressContainerMsg) {
   if (!m_aptPreviewScene || !m_currentAptFile) return;
 
   m_aptPreviewScene->clearEditorOverlay();
-  m_aptPreviewScene->clear();
+  { QSignalBlocker _sb(m_aptPreviewScene); m_aptPreviewScene->clear(); }
 
   const auto [sceneWidth, sceneHeight] = resolveAptPreviewCanvasSize(m_currentAptFile->summary);
   const QRectF canvasRect(0.0, 0.0, sceneWidth, sceneHeight);
@@ -7337,7 +8146,7 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
     auto* msgItem = m_aptPreviewScene->addSimpleText(msg);
     msgItem->setBrush(QBrush(QColor(160, 165, 180)));
     msgItem->setPos(24.0, sceneHeight * 0.5 - msgItem->boundingRect().height() * 0.5);
-    if (m_aptPreviewView) m_aptPreviewView->fitInView(m_aptPreviewScene->sceneRect(), Qt::KeepAspectRatio);
+    if (auto* v = qobject_cast<AptPreviewView*>(m_aptPreviewView)) v->fitContent();
     return;
   }
 
@@ -7537,7 +8346,7 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
               || n.kind == gf::apt::RenderNode::Kind::Unknown;
         });
 
-    if (allPlaceholders) {
+    if (allPlaceholders && !suppressContainerMsg) {
       // Build a short summary of the placeholder(s) for context.
       const gf::apt::RenderNode& first = nodes[0];
       const std::string& iname = first.instanceName;
@@ -7569,16 +8378,26 @@ void MainWindow::renderAptFrameToScene(const gf::apt::AptFrame* frame,
 
   syncAptEditorSceneContext();
 
+  // Expand scene rect to include any content that overflowed the canvas bounds
+  // (runtime-fallback nodes laid out in a grid may extend below the 1280×720 area).
+  if (!m_aptPreviewScene->items().isEmpty()) {
+    const QRectF itemsBounds = m_aptPreviewScene->itemsBoundingRect();
+    const QRectF current     = m_aptPreviewScene->sceneRect();
+    m_aptPreviewScene->setSceneRect(current.united(itemsBounds).adjusted(-40, -40, 40, 40));
+  }
+
+  // Zoom handling: on initial load (fitToContent=true) or when the view is still in
+  // its default fit-mode, auto-fit the content.  Once the user has manually zoomed,
+  // frame navigation preserves their zoom level (m_fitActive=false).
   if (m_aptPreviewView) {
-    if (fitToContent) {
-      const QRectF cb = m_aptPreviewScene->itemsBoundingRect();
-      const QRectF fitRect = (cb.isValid() && cb.width() > 1.0 && cb.height() > 1.0)
-          ? cb.adjusted(-20.0, -20.0, 20.0, 20.0)
-          : m_aptPreviewScene->sceneRect();
-      m_aptPreviewView->fitInView(fitRect, Qt::KeepAspectRatio);
-    } else {
-      m_aptPreviewView->fitInView(m_aptPreviewScene->sceneRect(), Qt::KeepAspectRatio);
+    auto* aptView = qobject_cast<AptPreviewView*>(m_aptPreviewView);
+    if (fitToContent || !aptView) {
+      // Explicit fit request — always fit and re-enable fit-on-resize.
+      if (aptView) aptView->fitContent();
+      else m_aptPreviewView->fitInView(m_aptPreviewScene->sceneRect(), Qt::KeepAspectRatio);
     }
+    // If aptView is in fit mode (user hasn't manually zoomed), keep fitting.
+    // Otherwise leave the zoom where it is (don't call fitInView at all).
   }
 }
 
@@ -7624,6 +8443,9 @@ void MainWindow::setAptFrameIndex(int idx) {
 
 void MainWindow::refreshAptPreview() {
   if (!m_aptPreviewScene) return;
+  if (m_aptPreviewInProgress) return;
+  m_aptPreviewInProgress = true;
+  const auto clearInProgress = qScopeGuard([this]{ m_aptPreviewInProgress = false; });
 
   if (!m_currentAptFile || m_currentAptFile->frames.empty()) {
     renderAptFrameToScene(nullptr, -1);
@@ -7674,21 +8496,21 @@ void MainWindow::refreshAptPreview() {
             renderAptFrameToScene(&ch.frames[0], -1, table);
           } else {
             // Frameless Sprite/Movie — runtime-only container.
+            // Build a synthetic placement so renderAptCharacterRecursive is called,
+            // which activates doRuntimeFallback and renders the scaffold preview.
             m_aptCharPreviewIdx = -1;
-            const QString name = QString::fromStdString(
-                // No easy instance name here; use export name if available.
-                [&]() -> std::string {
-                  for (const auto& ex : m_currentAptFile->exports)
-                    if (static_cast<int>(ex.character) == nodeIdx) return ex.name;
-                  return {};
-                }());
-            const QString hint = name.isEmpty()
-                ? QString("C%1").arg(nodeIdx) : name;
-            renderAptFrameToScene(nullptr, -1, nullptr,
-                QString("No static frames — \"%1\" is a runtime-only container.\n"
-                        "Its display list is assembled by ActionScript at runtime.\n"
-                        "Expand this character's children in the tree to inspect sub-sprites.")
-                .arg(hint));
+            syncNavControls(0, 0, QStringLiteral("No frame navigation — runtime-only container"));
+            gf::apt::AptFrame synthFrame;
+            synthFrame.frameitemcount = 1;
+            gf::apt::AptPlacement synthPl;
+            synthPl.character = static_cast<std::uint32_t>(nodeIdx);
+            synthPl.depth = 0;
+            synthFrame.placements.push_back(std::move(synthPl));
+            const std::vector<gf::apt::AptCharacter>* table =
+                ch.nested_characters.empty() ? nullptr : &ch.nested_characters;
+            // suppressContainerMsg=true: the scaffold renderer draws its own overlay;
+            // the generic "runtime-only container" message would be redundant.
+            renderAptFrameToScene(&synthFrame, -1, table, {}, true, true);
           }
           return;
         }
@@ -7859,10 +8681,7 @@ void MainWindow::refreshAptPlacementTreeLabels() {
                              .arg(QString::number(qulonglong(frame.offset), 16).toUpper()));
       for (std::size_t pi = 0; pi < frame.placements.size(); ++pi) {
         const auto& placement = frame.placements[pi];
-        const QString label = placement.instance_name.empty()
-            ? QString("Placement %1").arg(pi)
-            : QString("Placement %1 — %2").arg(pi).arg(QString::fromStdString(placement.instance_name));
-        auto* child = new QTreeWidgetItem(frameNode, QStringList() << label << aptPlacementValueText(placement));
+        auto* child = new QTreeWidgetItem(frameNode, QStringList() << aptPlacementTreeLabel(placement) << aptPlacementValueText(placement));
         child->setData(0, Qt::UserRole,
                        aptPlacementDetailText(placement, ownerLabel, static_cast<int>(fi), static_cast<int>(pi)));
         child->setData(0, kAptRoleNodeType, kAptNodePlacement);
@@ -7971,9 +8790,356 @@ void MainWindow::syncAptPropEditorFromItem(QTreeWidgetItem* item) {
     case kAptNodeCharacter:
       if (index >= 0 && index < static_cast<int>(file.characters.size())) {
         const auto& ch = file.characters[static_cast<std::size_t>(index)];
-        m_aptCharTypeLabel->setText(QString("%1 (%2)").arg(QString::fromStdString(gf::apt::aptCharTypeName(ch.type))).arg(ch.type));
-        m_aptCharSigLabel->setText(QString("0x%1").arg(QString::number(qulonglong(ch.signature), 16).toUpper()));
-        m_aptCharOffsetLabel->setText(QString("0x%1").arg(QString::number(qulonglong(ch.offset), 16).toUpper()));
+        const std::uint32_t charIdx = static_cast<std::uint32_t>(index);
+
+        m_aptCharTypeLabel->setText(
+            QString("%1 (%2)").arg(QString::fromStdString(gf::apt::aptCharTypeName(ch.type))).arg(ch.type));
+        m_aptCharSigLabel->setText(
+            QString("0x%1").arg(QString::number(qulonglong(ch.signature), 16).toUpper()));
+        m_aptCharOffsetLabel->setText(
+            QString("0x%1").arg(QString::number(qulonglong(ch.offset), 16).toUpper()));
+
+        if (m_aptCharFrameCountLabel) {
+          m_aptCharFrameCountLabel->setText(
+              (ch.type == 5 || ch.type == 9)
+              ? QString::number(ch.frames.size())
+              : QStringLiteral("—"));
+        }
+
+        if (m_aptCharBoundsLabel) {
+          m_aptCharBoundsLabel->setText(
+              ch.bounds
+              ? QString("L=%1 T=%2 R=%3 B=%4")
+                    .arg(ch.bounds->left,  0, 'f', 1)
+                    .arg(ch.bounds->top,   0, 'f', 1)
+                    .arg(ch.bounds->right, 0, 'f', 1)
+                    .arg(ch.bounds->bottom,0, 'f', 1)
+              : QStringLiteral("(none)"));
+        }
+
+        if (m_aptCharImportLabel) {
+          if (ch.type == 0) {
+            // Import placeholder: find the matching import record.
+            QString impText = QStringLiteral("(unresolved)");
+            for (const auto& imp : file.imports) {
+              if (imp.character == charIdx) {
+                impText = QString("%1 :: %2")
+                    .arg(QString::fromStdString(imp.movie),
+                         QString::fromStdString(imp.name));
+                break;
+              }
+            }
+            m_aptCharImportLabel->setText(impText);
+          } else {
+            // Show export linkage name if this character is exported.
+            QString expText = QStringLiteral("—");
+            for (const auto& exp : file.exports) {
+              if (exp.character == charIdx) {
+                expText = QStringLiteral("export: ") + QString::fromStdString(exp.name);
+                break;
+              }
+            }
+            m_aptCharImportLabel->setText(expText);
+          }
+        }
+
+        // ── Scaffold breakdown for runtime-only containers ────────────────
+        // Shown when a frameless Sprite/Movie is selected (no static display list).
+        // Scans action bytecodes to find attachMovie/duplicateMovieClip calls and
+        // builds a human-readable summary of how the scaffold was constructed.
+        if (m_aptScaffoldDump) {
+          const bool isRuntimeContainer = (ch.type == 5 || ch.type == 9) && ch.frames.empty();
+          m_aptScaffoldDump->setVisible(isRuntimeContainer);
+          if (isRuntimeContainer) {
+            // Use the shared cache — same result that renderAptCharacterRecursive uses.
+            const gf::apt::AptActionHints& hints = getCachedAptHints(charIdx, ch, file.characters);
+
+            // Find export name for this container.
+            QString exportNameStr;
+            for (const auto& ex : file.exports)
+              if (ex.character == charIdx) { exportNameStr = QString::fromStdString(ex.name); break; }
+
+            // Helper: probe the visual tier of a resolved character.
+            //   0=leaf, 1=framed-container, 2=runtime-container, 3=import
+            const std::vector<gf::apt::AptCharacter>& scanTable =
+                (ch.type == 9 && !ch.nested_characters.empty())
+                ? ch.nested_characters
+                : file.characters;
+            auto probeTier = [&](std::uint32_t cid) -> int {
+              if (cid >= scanTable.size()) return -1;
+              const auto& c2 = scanTable[cid];
+              if (c2.type == 0) return 3;
+              if (c2.type != 5 && c2.type != 9) return 0;
+              for (const auto& f2 : c2.frames)
+                if (!f2.placements.empty()) return 1;
+              return 2;
+            };
+            auto tierLabel = [](int t) -> QLatin1String {
+              switch (t) {
+                case 0: return QLatin1String("leaf");
+                case 1: return QLatin1String("framed");
+                case 2: return QLatin1String("runtime-ctr");
+                case 3: return QLatin1String("import");
+                default: return QLatin1String("?");
+              }
+            };
+
+            // ── Rebuild the attach tree for the breakdown panel ──────────────
+            // Mirrors buildAttachTree() inside renderAptCharacterRecursive but
+            // uses the local `hints`, `file`, `scanTable` and `probeTier` lambda.
+            static const std::unordered_set<std::string> kInstCalls =
+                {"attachMovie", "duplicateMovieClip", "createEmptyMovieClip"};
+            static const std::unordered_set<std::string> kGotoCalls =
+                {"gotoAndStop", "gotoAndPlay"};
+            static const std::unordered_set<std::string> kKnownProps =
+                {"_x","_y","_alpha","_visible","_xscale","_yscale","_rotation"};
+
+            static constexpr double kDumpNaN = std::numeric_limits<double>::quiet_NaN();
+            struct DumpNode {
+              QString callLine;
+              QString resolvedStr;
+              QString instanceName;
+              QString gotoLabel;
+              int     vizTier    = -1;
+              int     depth      = -1;
+              bool    resolvedLocal = true;
+              bool    hasSubActions = false;
+              bool   propX=false; double xVal=kDumpNaN;
+              bool   propY=false; double yVal=kDumpNaN;
+              bool   propAlpha=false; double alphaVal=kDumpNaN;
+              bool   propVis=false;
+              bool   propScale=false; double scaleVal=kDumpNaN;
+              bool   propRot=false; double rotVal=kDumpNaN;
+            };
+            std::vector<DumpNode> treeNodes;
+            std::unordered_map<std::string, std::size_t> dumpInstMap;
+
+            for (const auto& dc : hints.detected_calls) {
+              if (!kInstCalls.count(dc.call_name)) continue;
+              DumpNode dn;
+              const QString sym  = dc.arg_strings.empty()
+                  ? QStringLiteral("?") : QString::fromStdString(dc.arg_strings[0]);
+              const QString inst = (dc.arg_strings.size() > 1 && !dc.arg_strings[1].empty())
+                  ? QString::fromStdString(dc.arg_strings[1]) : QString();
+              dn.instanceName = inst;
+              dn.callLine = QString::fromStdString(dc.call_name)
+                          + QStringLiteral("(\"") + sym + QStringLiteral("\")");
+
+              if (!dc.arg_strings.empty()) {
+                for (const auto& ex : file.exports)
+                  if (ex.name == dc.arg_strings[0]) {
+                    dn.vizTier = probeTier(ex.character);
+                    dn.resolvedStr = QString("C%1 [%2]")
+                        .arg(ex.character).arg(tierLabel(dn.vizTier));
+                    if (dn.vizTier == 3) {
+                      for (const auto& im : file.imports)
+                        if (im.character == ex.character) {
+                          dn.resolvedStr += QStringLiteral(" [")
+                              + QString::fromStdString(im.movie) + QStringLiteral("/")
+                              + QString::fromStdString(im.name) + QStringLiteral("]");
+                          dn.resolvedLocal = false;
+                        }
+                    }
+                    break;
+                  }
+                if (dn.resolvedStr.isEmpty())
+                  for (const auto& im : file.imports)
+                    if (im.name == dc.arg_strings[0]) {
+                      dn.vizTier = 3;
+                      dn.resolvedLocal = false;
+                      dn.resolvedStr = QString("C%1 [import: %2/%3]")
+                          .arg(im.character)
+                          .arg(QString::fromStdString(im.movie))
+                          .arg(QString::fromStdString(im.name));
+                      break;
+                    }
+                if (dn.resolvedStr.isEmpty()) dn.resolvedStr = QStringLiteral("(unresolved)");
+              }
+
+              // Depth from numeric arg[0].
+              if (!dc.arg_numbers.empty())
+                dn.depth = static_cast<int>(dc.arg_numbers[0]);
+
+              if (!inst.isEmpty()) dumpInstMap[inst.toStdString()] = treeNodes.size();
+              treeNodes.push_back(std::move(dn));
+            }
+
+            // gotoAndStop/gotoAndPlay → first unset tree node.
+            for (const auto& dc : hints.detected_calls) {
+              if (!kGotoCalls.count(dc.call_name) || dc.arg_strings.empty()) continue;
+              for (auto& dn : treeNodes) {
+                if (dn.gotoLabel.isEmpty() && dn.vizTier >= 0) {
+                  dn.gotoLabel = QString::fromStdString(dc.call_name + "(\"" + dc.arg_strings[0] + "\")");
+                  break;
+                }
+              }
+            }
+            // setTarget → hasSubActions.
+            for (const auto& as : hints.strings) {
+              if (as.role != gf::apt::AptStringRole::TargetPath) continue;
+              auto it = dumpInstMap.find(as.value);
+              if (it != dumpInstMap.end()) treeNodes[it->second].hasSubActions = true;
+            }
+            // Property hints.
+            std::string dumpActiveTarget;
+            for (const auto& as : hints.strings) {
+              if (as.role == gf::apt::AptStringRole::TargetPath) {
+                dumpActiveTarget = as.value;
+              } else if (as.role == gf::apt::AptStringRole::MemberName
+                         && kKnownProps.count(as.value)) {
+                DumpNode* tgt = nullptr;
+                if (!dumpActiveTarget.empty()) {
+                  auto it = dumpInstMap.find(dumpActiveTarget);
+                  if (it != dumpInstMap.end()) tgt = &treeNodes[it->second];
+                }
+                if (!tgt && !treeNodes.empty()) tgt = &treeNodes[0];
+                if (tgt) {
+                  if      (as.value == "_x")                               tgt->propX     = true;
+                  else if (as.value == "_y")                               tgt->propY     = true;
+                  else if (as.value == "_alpha")                           tgt->propAlpha = true;
+                  else if (as.value == "_visible")                         tgt->propVis   = true;
+                  else if (as.value == "_xscale" || as.value == "_yscale") tgt->propScale = true;
+                  else if (as.value == "_rotation")                        tgt->propRot   = true;
+                }
+              }
+            }
+
+            // Numeric property values from set_members hints.
+            for (const auto& smh : hints.set_members) {
+              DumpNode* tgt = nullptr;
+              if (!smh.target.empty()) {
+                auto it = dumpInstMap.find(smh.target);
+                if (it != dumpInstMap.end()) tgt = &treeNodes[it->second];
+              }
+              if (!tgt && !treeNodes.empty()) tgt = &treeNodes[0];
+              if (!tgt) continue;
+              if      (smh.property == "_x")   { tgt->propX = true; tgt->xVal = smh.value; }
+              else if (smh.property == "_y")   { tgt->propY = true; tgt->yVal = smh.value; }
+              else if (smh.property == "_alpha"){ tgt->propAlpha = true; tgt->alphaVal = smh.value; }
+              else if (smh.property == "_xscale" || smh.property == "_yscale")
+                { tgt->propScale = true; tgt->scaleVal = smh.value; }
+              else if (smh.property == "_rotation")
+                { tgt->propRot = true; tgt->rotVal = smh.value; }
+            }
+
+            // Tier counts.
+            int nLeaf=0, nFramed=0, nRuntime=0, nImp=0, nUnres=0;
+            for (const auto& dn : treeNodes) {
+              if      (dn.vizTier == 0) ++nLeaf;
+              else if (dn.vizTier == 1) ++nFramed;
+              else if (dn.vizTier == 2) ++nRuntime;
+              else if (dn.vizTier == 3) ++nImp;
+              else                      ++nUnres;
+            }
+
+            // Near-call strings not already in tree nodes.
+            auto alreadyCovered = [&](const std::string& val) {
+              for (const auto& dc : hints.detected_calls)
+                if (!dc.arg_strings.empty() && dc.arg_strings[0] == val) return true;
+              return false;
+            };
+
+            // ── Build breakdown text ──────────────────────────────────────
+            QString stext;
+            stext += QString("Runtime attach tree: C%1 %2%3\n")
+                .arg(charIdx)
+                .arg(QString::fromStdString(gf::apt::aptCharTypeName(ch.type)))
+                .arg(exportNameStr.isEmpty() ? QString()
+                     : QStringLiteral(" [export: ") + exportNameStr + QStringLiteral("]"));
+            stext += QString("%1 opcode%2 scanned")
+                .arg(hints.opcode_count).arg(hints.opcode_count == 1 ? "" : "s");
+            {
+              QStringList parts;
+              if (nLeaf)    parts << QString("%1 leaf").arg(nLeaf);
+              if (nFramed)  parts << QString("%1 framed").arg(nFramed);
+              if (nRuntime) parts << QString("%1 runtime-ctr").arg(nRuntime);
+              if (nImp)     parts << QString("%1 import").arg(nImp);
+              if (nUnres)   parts << QString("%1 unresolved").arg(nUnres);
+              if (!parts.isEmpty())
+                stext += QStringLiteral(" | ") + parts.join(QStringLiteral(" \u2022 "));
+            }
+            stext += QStringLiteral("\n\n");
+
+            if (!treeNodes.empty()) {
+              stext += QStringLiteral("Attached children (action-grounded):\n");
+              for (std::size_t ni = 0; ni < treeNodes.size(); ++ni) {
+                const auto& dn = treeNodes[ni];
+                stext += QString("[%1] ").arg(ni + 1) + dn.callLine;
+                if (!dn.instanceName.isEmpty())
+                  stext += QStringLiteral(" inst=\"") + dn.instanceName + QStringLiteral("\"");
+                stext += QStringLiteral(" \u2192 ") + dn.resolvedStr + QStringLiteral("\n");
+                // Sub-detail lines.
+                if (dn.depth >= 0)
+                  stext += QStringLiteral("    \u25CF depth ") + QString::number(dn.depth) + QStringLiteral("\n");
+                if (dn.hasSubActions)
+                  stext += QStringLiteral("    \u25CF setTarget points here\n");
+                if (!dn.gotoLabel.isEmpty())
+                  stext += QStringLiteral("    \u25CF ") + dn.gotoLabel + QStringLiteral("\n");
+                // Numeric property values — show value when recovered, "?" otherwise.
+                auto fmtVal = [](double v) -> QString {
+                  if (std::isnan(v)) return QStringLiteral("?");
+                  return QString::number(v, 'g', 6);
+                };
+                if (dn.propX || dn.propY) {
+                  stext += QStringLiteral("    \u25CF pos: x=") + fmtVal(dn.xVal)
+                         + QStringLiteral(" y=") + fmtVal(dn.yVal) + QStringLiteral("\n");
+                }
+                if (dn.propAlpha)
+                  stext += QStringLiteral("    \u25CF _alpha=") + fmtVal(dn.alphaVal) + QStringLiteral("\n");
+                if (dn.propScale)
+                  stext += QStringLiteral("    \u25CF _scale=") + fmtVal(dn.scaleVal) + QStringLiteral("\n");
+                if (dn.propRot)
+                  stext += QStringLiteral("    \u25CF _rotation=") + fmtVal(dn.rotVal) + QStringLiteral("\n");
+                if (dn.propVis)
+                  stext += QStringLiteral("    \u25CF _visible assigned\n");
+              }
+            } else {
+              // No detected_calls — fall back to near-call string listing.
+              bool anyNearCall = false;
+              for (const auto& as : hints.strings) {
+                if (!as.near_call || as.role != gf::apt::AptStringRole::PushLiteral) continue;
+                if (!anyNearCall) { stext += QStringLiteral("Near-call strings (no resolved calls):\n"); anyNearCall = true; }
+                QString resolvedStr;
+                for (const auto& ex : file.exports)
+                  if (ex.name == as.value) {
+                    const int t = probeTier(ex.character);
+                    resolvedStr = QString(" \u2192 C%1 [%2]").arg(ex.character).arg(tierLabel(t));
+                    break;
+                  }
+                for (const auto& im : file.imports)
+                  if (im.name == as.value && resolvedStr.isEmpty()) {
+                    resolvedStr = QString(" \u2192 C%1 [import]").arg(im.character);
+                    break;
+                  }
+                stext += QStringLiteral("  \"") + QString::fromStdString(as.value)
+                       + QStringLiteral("\"") + resolvedStr + QStringLiteral("\n");
+              }
+              if (!anyNearCall && hints.opcode_count > 0)
+                stext += QStringLiteral("(no instantiate calls detected)\n");
+              else if (hints.opcode_count == 0)
+                stext += QStringLiteral("(no action bytecode found)\n");
+            }
+
+            // File imports table (diagnostic; always shown at bottom, capped).
+            if (!file.imports.empty()) {
+              stext += QStringLiteral("\nFile imports (")
+                     + QString::number(file.imports.size()) + QStringLiteral(" total");
+              const int showImp = std::min(static_cast<int>(file.imports.size()), 12);
+              stext += QStringLiteral(", showing ") + QString::number(showImp) + QStringLiteral("):\n");
+              int shown = 0;
+              for (const auto& im : file.imports) {
+                stext += QString("  C%1 \u2190 %2/%3\n")
+                    .arg(im.character)
+                    .arg(QString::fromStdString(im.movie))
+                    .arg(QString::fromStdString(im.name));
+                if (++shown >= 12) break;
+              }
+            }
+
+            m_aptScaffoldDump->setPlainText(stext);
+          }
+        }
+
         m_aptPropStack->setCurrentWidget(m_aptCharPage);
       } else {
         m_aptDetails->setPlainText(item->data(0, Qt::UserRole).toString());
@@ -8202,10 +9368,7 @@ void MainWindow::onAptApply() {
         placement->transform.rotate_skew_0 = newRSkew0;
         placement->transform.rotate_skew_1 = newRSkew1;
 
-        const QString label = placement->instance_name.empty()
-            ? QString("Placement %1").arg(placementIndex)
-            : QString("Placement %1 — %2").arg(placementIndex).arg(QString::fromStdString(placement->instance_name));
-        item->setText(0, label);
+        item->setText(0, aptPlacementTreeLabel(*placement));
         item->setText(1, aptPlacementValueText(*placement));
         item->setData(0, Qt::UserRole, aptPlacementDetailText(*placement, ownerLabel, index, placementIndex));
       }
@@ -9151,3 +10314,5 @@ if (wantsTexture) {
 } // namespace gf::gui
 
 }
+
+#include "MainWindow.moc"
