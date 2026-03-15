@@ -489,14 +489,43 @@ protected:
   bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
+  struct PreviewSelectionContext {
+    quint64 selectionVersion = 0;
+    QString entryPath;
+    QString entryDisplayName;
+    QString entryType;
+    quint32 entryIndex = 0;
+    bool isEmbedded = false;
+
+    QByteArray rawBytes;
+    QByteArray inflatedBytes;
+    QByteArray hexBytes;
+    QByteArray textBytes;
+    QByteArray textureBytes;
+
+    QString rawSource;
+    QString inflatedSource;
+    QString hexSource;
+    QString textSource;
+    QString textureSource;
+    QString textDetectedType;
+    QString textureDetectedType;
+  };
+
+  void invalidatePreviewContext();
   void applyTextureZoom();
   void stepTextureZoom(int direction);
   void resetTextureZoomToFit();
   void populateTextureMipSelector(int mipCount);
   bool renderCurrentTextureMip(int mipIndex);
   void clearCurrentTextureState();
+  PreviewSelectionContext buildPreviewContextForItem(QTreeWidgetItem* item) const;
+  QString buildPreviewDiagnosticsText(const PreviewSelectionContext& ctx) const;
 
 private:
+  quint64 m_previewSelectionVersion = 0;
+  PreviewSelectionContext m_previewContext;
+  quint64 m_currentTextureSelectionVersion = 0;
 };
 
 } // namespace gf::gui
