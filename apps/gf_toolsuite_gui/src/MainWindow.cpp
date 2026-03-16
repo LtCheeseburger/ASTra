@@ -4939,11 +4939,15 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
     const std::uint32_t entryIndex = static_cast<std::uint32_t>(sourceItem->data(0, Qt::UserRole + 6).toULongLong());
 
     std::string localErr;
-    auto bytesOpt = editor.getEntryInflatedBytes(entryIndex, &localErr);
+    auto bytesOpt = entryTypeUpper.startsWith("P3R")
+        ? editor.getEntryStoredBytes(entryIndex)
+        : editor.getEntryInflatedBytes(entryIndex, &localErr);
     if (!bytesOpt.has_value()) {
+      const QString why = entryTypeUpper.startsWith("P3R")
+          ? QStringLiteral("could not read stored entry bytes")
+          : QString::fromStdString(localErr);
       if (failures) failures->push_back(QString("%1 — %2")
-                                        .arg(sourceItem->text(0).trimmed(),
-                                             QString::fromStdString(localErr)));
+                                        .arg(sourceItem->text(0).trimmed(), why));
       return false;
     }
 
@@ -4953,15 +4957,22 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
     if (entryTypeUpper.startsWith("P3R")) {
       std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
       const std::uint32_t astFlags = (entryIndex < editor.entries().size()) ? editor.entries()[entryIndex].flags : 0u;
-      const auto prep = gf::textures::prepare_texture_dds_for_export(
-          std::span<const std::uint8_t>(payload.data(), payload.size()), true, astFlags);
-      if (!prep.ok()) {
-        const QString detail = p3rConversionDetailsText(prep);
+      std::vector<std::uint8_t> rebuilt = p3rToDds(std::span<const std::uint8_t>(payload.data(), payload.size()));
+      if (rebuilt.size() < 4 || std::memcmp(rebuilt.data(), "DDS ", 4) != 0) {
+        rebuilt = maybe_rebuild_ea_dds(std::span<const std::uint8_t>(payload.data(), payload.size()), astFlags);
+      }
+      if (rebuilt.size() >= 4 && std::memcmp(rebuilt.data(), "DDS ", 4) == 0) {
+        outBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
+        exportTypeUpper = "DDS";
+      } else {
+        const auto prep = gf::textures::prepare_texture_dds_for_export(
+            std::span<const std::uint8_t>(payload.data(), payload.size()), true, astFlags);
+        const QString detail = prep.ok()
+            ? QStringLiteral("P3R -> DDS conversion unexpectedly returned no DDS bytes.")
+            : p3rConversionDetailsText(prep);
         if (failures) failures->push_back(QString("%1 — %2").arg(sourceItem->text(0).trimmed(), detail));
         return false;
       }
-      outBytes = QByteArray(reinterpret_cast<const char*>(prep.ddsBytes.data()), int(prep.ddsBytes.size()));
-      exportTypeUpper = "DDS";
     } else if (entryTypeUpper == "XPR2" || entryTypeUpper == "XPR") {
       // Export XPR2 texture as a DDS file (full mip chain when available).
       std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
@@ -5714,30 +5725,45 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
     const QString containerStem = sanitizeExportName(cfi.completeBaseName().isEmpty() ? cfi.fileName() : cfi.completeBaseName());
 
     for (const auto& entry : ents) {
+      const QString name = bytesToEntryName(entry.nameBytes, entry.index);
+      const QFileInfo entryFi(name);
+      const QString suffixUpper = entryFi.suffix().trimmed().toUpper();
+      const bool isP3R = (suffixUpper == "P3R");
+
       std::string localErr;
-      auto bytesOpt = ed->getEntryInflatedBytes(entry.index, &localErr);
+      auto bytesOpt = isP3R
+          ? ed->getEntryStoredBytes(entry.index)
+          : ed->getEntryInflatedBytes(entry.index, &localErr);
       if (!bytesOpt.has_value()) {
-        failures.push_back(QString("entry_%1 — %2").arg(entry.index).arg(QString::fromStdString(localErr)));
+        const QString why = isP3R
+            ? QStringLiteral("could not read stored entry bytes")
+            : QString::fromStdString(localErr);
+        failures.push_back(QString("entry_%1 — %2").arg(entry.index).arg(why));
         continue;
       }
 
       QByteArray outBytes(reinterpret_cast<const char*>(bytesOpt->data()), int(bytesOpt->size()));
-      QString exportTypeUpper = detectTypeUpperFromBytes(std::span<const std::uint8_t>(bytesOpt->data(), bytesOpt->size()));
-      QString name = bytesToEntryName(entry.nameBytes, entry.index);
-      QFileInfo entryFi(name);
+      QString exportTypeUpper = isP3R
+          ? QStringLiteral("P3R")
+          : detectTypeUpperFromBytes(std::span<const std::uint8_t>(bytesOpt->data(), bytesOpt->size()));
       QString baseName = entryFi.completeBaseName().isEmpty() ? sanitizeExportName(name) : sanitizeExportName(entryFi.completeBaseName());
       if (baseName.isEmpty()) baseName = QString("%1_entry_%2").arg(containerStem).arg(entry.index);
 
       if (exportTypeUpper.startsWith("P3R")) {
         std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
-        const auto prep = gf::textures::prepare_texture_dds_for_export(
-            std::span<const std::uint8_t>(payload.data(), payload.size()), true, entry.flags);
-        if (!prep.ok()) {
+        std::vector<std::uint8_t> rebuilt = p3rToDds(std::span<const std::uint8_t>(payload.data(), payload.size()));
+        if (rebuilt.size() < 4 || std::memcmp(rebuilt.data(), "DDS ", 4) != 0) {
+          rebuilt = maybe_rebuild_ea_dds(std::span<const std::uint8_t>(payload.data(), payload.size()), entry.flags);
+        }
+        if (rebuilt.size() >= 4 && std::memcmp(rebuilt.data(), "DDS ", 4) == 0) {
+          outBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
+          exportTypeUpper = "DDS";
+        } else {
+          const auto prep = gf::textures::prepare_texture_dds_for_export(
+              std::span<const std::uint8_t>(payload.data(), payload.size()), true, entry.flags);
           failures.push_back(QString("%1 — %2").arg(name, p3rConversionDetailsText(prep)));
           continue;
         }
-        outBytes = QByteArray(reinterpret_cast<const char*>(prep.ddsBytes.data()), int(prep.ddsBytes.size()));
-        exportTypeUpper = "DDS";
       }
 
       if (exportTypeUpper == "DDS") {
@@ -10016,8 +10042,6 @@ void MainWindow::invalidatePreviewContext() {
   }
 }
 
-static bool looksLikeTexturePreviewBytes(const QByteArray& bytes);
-
 MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTreeWidgetItem* item) const {
   PreviewSelectionContext ctx;
   ctx.selectionVersion = m_previewSelectionVersion;
@@ -10089,16 +10113,14 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
 
   QByteArray inflated;
   QString inflatedSource;
-  const bool shouldTryInflate = (type.compare(QStringLiteral("ZLIB"), Qt::CaseInsensitive) == 0) ||
-                                looksZlibPreviewBytes(ctx.rawBytes);
-  if (shouldTryInflate && isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
+  if (isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
     std::string inflateErr;
     if (auto fullOpt = m_liveAstEditor->getEntryInflatedBytes(entryIndex, &inflateErr); fullOpt.has_value() && !fullOpt->empty()) {
       inflated = QByteArray(reinterpret_cast<const char*>(fullOpt->data()), static_cast<int>(std::min<std::size_t>(fullOpt->size(), static_cast<std::size_t>(std::numeric_limits<int>::max()))));
       inflatedSource = QStringLiteral("editor.getEntryInflatedBytes");
     }
   }
-  if (inflated.isEmpty() && shouldTryInflate) {
+  if (inflated.isEmpty() && looksZlibPreviewBytes(ctx.rawBytes)) {
     std::vector<std::uint8_t> zIn(static_cast<std::size_t>(ctx.rawBytes.size()));
     if (!ctx.rawBytes.isEmpty()) std::memcpy(zIn.data(), ctx.rawBytes.constData(), static_cast<std::size_t>(ctx.rawBytes.size()));
     const auto inflatedPreview = gf::core::AstArchive::inflateZlibPreview(zIn, 8u * 1024u * 1024u);
@@ -10115,7 +10137,7 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
       : ctx.rawBytes.left(static_cast<int>(std::min<quint64>(kPreviewMax, static_cast<quint64>(ctx.rawBytes.size()))));
   ctx.hexSource = !ctx.inflatedBytes.isEmpty() ? ctx.inflatedSource : ctx.rawSource;
 
-  const QByteArray textCandidatePrimary = (!ctx.inflatedBytes.isEmpty() && shouldTryInflate) ? ctx.inflatedBytes : ctx.rawBytes;
+  const QByteArray textCandidatePrimary = !ctx.inflatedBytes.isEmpty() ? ctx.inflatedBytes : ctx.rawBytes;
   if (decodeTextCandidateBytes(textCandidatePrimary).has_value()) {
     ctx.textBytes = textCandidatePrimary;
     ctx.textSource = !ctx.inflatedBytes.isEmpty() ? ctx.inflatedSource : ctx.rawSource;
@@ -10124,7 +10146,7 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
     ctx.textDetectedType = QStringLiteral("binary/non-text");
   }
 
-  if (ctx.textureBytes.isEmpty() && !ctx.inflatedBytes.isEmpty() && shouldTryInflate) {
+  if (ctx.textureBytes.isEmpty() && !ctx.inflatedBytes.isEmpty()) {
     ctx.textureBytes = ctx.inflatedBytes;
     ctx.textureSource = ctx.inflatedSource;
   }
