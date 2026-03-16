@@ -927,14 +927,28 @@ static std::optional<gf::textures::DdsInfo> tryParseTextureDdsInfo(std::span<con
 
 static bool looks_like_zlib_cmf_flg(std::uint8_t cmf, std::uint8_t flg);
 static std::vector<std::uint8_t> zlib_inflate_unknown_size(std::span<const std::uint8_t> in);
+// Forward declaration — full definition lives near buildPreviewContextForItem.
+// Returns true when `item` is a leaf inside a nested embedded sub-AST, meaning
+// its UserRole+6 entry-index is scoped to the inner sub-AST and must NOT be
+// used with the outer on-disk AstContainerEditor (m_liveAstEditor).
+static bool itemIsNestedSubEntry(const QTreeWidgetItem* item);
+// Forward declaration — full definition lives near the preview helpers below.
+static bool looksZlibPreviewBytes(const QByteArray& b);
+// Forward declaration — reads `size` bytes from `path` starting at `offset`.
+static std::vector<std::uint8_t> read_file_range(const QString& path, std::uint64_t offset, std::uint64_t size);
 
 struct ResolvedTexturePayload {
-  std::vector<std::uint8_t> bytes;
+  std::vector<std::uint8_t> bytes;          // effective payload for texture work
+  std::vector<std::uint8_t> rawBytes;       // authoritative stored/current-entry bytes
+  std::vector<std::uint8_t> inflatedBytes;  // only populated when the entry itself is actually zlib-backed
   QString source;
+  QString rawSource;
+  QString inflatedSource;
   std::size_t rawSize = 0;
   bool usedPreview = false;
   bool usedPending = false;
   bool usedInflate = false;
+  bool entryLooksCompressed = false;
 };
 
 static QString hexSignaturePrefix(std::span<const std::uint8_t> bytes, std::size_t count = 8) {
@@ -953,61 +967,233 @@ static ResolvedTexturePayload resolveTexturePayloadForEditor(QTreeWidgetItem* it
                                                              std::uint32_t entryIndex) {
   ResolvedTexturePayload out;
 
-  if (item) {
-    const QVariant previewVar = item->data(0, Qt::UserRole + 31);
-    if (previewVar.isValid()) {
-      const QByteArray preview = previewVar.toByteArray();
-      if (!preview.isEmpty()) {
-        out.bytes.resize(static_cast<std::size_t>(preview.size()));
-        std::memcpy(out.bytes.data(), preview.constData(), static_cast<std::size_t>(preview.size()));
-        out.source = QStringLiteral("tree.previewBytes");
-        out.rawSize = out.bytes.size();
-        out.usedPreview = true;
-        return out;
-      }
+  auto copyByteArray = [](const QByteArray& in) {
+    std::vector<std::uint8_t> out;
+    if (!in.isEmpty()) {
+      out.resize(static_cast<std::size_t>(in.size()));
+      std::memcpy(out.data(), in.constData(), static_cast<std::size_t>(in.size()));
     }
+    return out;
+  };
 
+  // Pending replacement bytes always win regardless of nesting.
+  if (item) {
     const QVariant pendingVar = item->data(0, Qt::UserRole + 30);
     if (pendingVar.isValid()) {
       const QByteArray pending = pendingVar.toByteArray();
       if (!pending.isEmpty()) {
-        out.bytes.resize(static_cast<std::size_t>(pending.size()));
-        std::memcpy(out.bytes.data(), pending.constData(), static_cast<std::size_t>(pending.size()));
-        out.source = QStringLiteral("tree.pendingBytes");
-        out.rawSize = out.bytes.size();
+        out.rawBytes = copyByteArray(pending);
+        out.rawSource = QStringLiteral("tree.pendingBytes");
+        out.rawSize = out.rawBytes.size();
         out.usedPending = true;
-        return out;
       }
     }
   }
 
-  if (auto storedOpt = editor.getEntryStoredBytes(entryIndex); storedOpt.has_value()) {
-    out.rawSize = storedOpt->size();
+  // For nested sub-entries the supplied `editor` is the OUTER on-disk container
+  // and `entryIndex` is relative to the INNER sub-AST directory.  Using the editor
+  // here would silently return the wrong outer entry (e.g. a tiny XML stub).
+  // Instead, read directly from the file using the absolute payload offset that
+  // was stored in UserRole+1 when the inner-AST children were created.
+  const bool isNested = itemIsNestedSubEntry(item);
+
+  if (out.rawBytes.empty() && !isNested) {
+    if (auto storedOpt = editor.getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
+      out.rawBytes = *storedOpt;
+      out.rawSource = QStringLiteral("editor.getEntryStoredBytes");
+      out.rawSize = out.rawBytes.size();
+    } else if (auto storedOpt2 = editor.getEntryStoredBytes(entryIndex); storedOpt2.has_value()) {
+      out.rawSource = QStringLiteral("editor.getEntryStoredBytes");
+      out.rawSize = storedOpt2->size();
+    }
   }
 
-  std::string inflateErr;
-  if (auto inflatedOpt = editor.getEntryInflatedBytes(entryIndex, &inflateErr); inflatedOpt.has_value() && !inflatedOpt->empty()) {
-    out.bytes = *inflatedOpt;
-    out.source = QStringLiteral("editor.getEntryInflatedBytes");
-    return out;
+  // Direct file-range read: used for nested sub-entries and as a fallback when
+  // the editor returned nothing useful.  UserRole+1 is the absolute byte offset
+  // of the payload in the on-disk file; UserRole+2 is the compressed size.
+  if (out.rawBytes.empty() && item) {
+    const QString filePath = item->data(0, Qt::UserRole).toString();
+    const quint64 absOff   = item->data(0, Qt::UserRole + 1).toULongLong();
+    const quint64 compSz   = item->data(0, Qt::UserRole + 2).toULongLong();
+    if (!filePath.isEmpty() && compSz > 0) {
+      auto raw = read_file_range(filePath,
+                                 static_cast<std::uint64_t>(absOff),
+                                 static_cast<std::uint64_t>(compSz));
+      if (!raw.empty()) {
+        out.rawBytes = std::move(raw);
+        out.rawSource = isNested
+            ? QStringLiteral("nested.file.range")
+            : QStringLiteral("fallback.file.range");
+        out.rawSize = out.rawBytes.size();
+      }
+    }
   }
 
-  if (auto storedOpt = editor.getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
-    out.bytes = *storedOpt;
-    out.source = QStringLiteral("editor.getEntryStoredBytes");
-    const bool isZlibType = (type.compare("ZLIB", Qt::CaseInsensitive) == 0);
-    const bool looksZlib = (!isZlibType && out.bytes.size() >= 2 && looks_like_zlib_cmf_flg(out.bytes[0], out.bytes[1]));
-    if (!isZlibType && looksZlib) {
+  out.bytes = out.rawBytes;
+  out.source = out.rawSource;
+
+  const bool isZlibType = (type.compare("ZLIB", Qt::CaseInsensitive) == 0);
+  const bool looksZlib = (out.rawBytes.size() >= 2 && looks_like_zlib_cmf_flg(out.rawBytes[0], out.rawBytes[1]));
+  out.entryLooksCompressed = isZlibType || looksZlib;
+
+  if (out.entryLooksCompressed) {
+    // Only use the editor inflate path when not nested (same scoping rule).
+    std::string inflateErr;
+    if (!isNested) {
+      if (auto inflatedOpt = editor.getEntryInflatedBytes(entryIndex, &inflateErr); inflatedOpt.has_value() && !inflatedOpt->empty()) {
+        out.inflatedBytes = *inflatedOpt;
+        out.inflatedSource = QStringLiteral("editor.getEntryInflatedBytes");
+        out.bytes = out.inflatedBytes;
+        out.source = out.inflatedSource;
+        out.usedInflate = true;
+      }
+    }
+    if (!out.usedInflate && !out.rawBytes.empty() && !isZlibType && looksZlib) {
       try {
-        out.bytes = zlib_inflate_unknown_size(std::span<const std::uint8_t>(out.bytes.data(), out.bytes.size()));
-        out.source = QStringLiteral("editor.getEntryStoredBytes+zlib.inflate");
+        out.inflatedBytes = zlib_inflate_unknown_size(std::span<const std::uint8_t>(out.rawBytes.data(), out.rawBytes.size()));
+        out.inflatedSource = isNested
+            ? QStringLiteral("nested.file.range+zlib.inflate")
+            : QStringLiteral("editor.getEntryStoredBytes+zlib.inflate");
+        out.bytes = out.inflatedBytes;
+        out.source = out.inflatedSource;
         out.usedInflate = true;
       } catch (...) {
       }
     }
   }
 
+  if (out.bytes.empty() && !out.rawBytes.empty()) {
+    out.bytes = out.rawBytes;
+    out.source = out.rawSource;
+  }
+
   return out;
+}
+
+
+static bool textureTypePrefersStoredBytes(const QString& typeUpper) {
+  return typeUpper == "DDS" || typeUpper == "XPR" || typeUpper == "XPR2" || typeUpper.startsWith("P3R");
+}
+
+static QString summarizeResolvedTexturePayload(const ResolvedTexturePayload& payload) {
+  return QString("source=%1 | raw=%2 | effective=%3 | inflated=%4 | pending=%5 | inflatedUsed=%6 | sig=[%7]")
+      .arg(payload.source.isEmpty() ? QStringLiteral("<none>") : payload.source)
+      .arg(qulonglong(payload.rawSize))
+      .arg(qulonglong(payload.bytes.size()))
+      .arg(qulonglong(payload.inflatedBytes.size()))
+      .arg(payload.usedPending ? QStringLiteral("yes") : QStringLiteral("no"))
+      .arg(payload.usedInflate ? QStringLiteral("yes") : QStringLiteral("no"))
+      .arg(hexSignaturePrefix(std::span<const std::uint8_t>(payload.bytes.data(), payload.bytes.size())));
+}
+
+static std::optional<std::vector<std::uint8_t>> buildDdsForTextureExport(const QString& entryTypeUpper,
+                                                                         const ResolvedTexturePayload& payload,
+                                                                         std::uint32_t astFlags,
+                                                                         QString* detailsOut = nullptr) {
+  QStringList details;
+  details << QString("Entry type: %1").arg(entryTypeUpper);
+  details << QString("Resolved payload: %1").arg(summarizeResolvedTexturePayload(payload));
+
+  if (payload.bytes.empty()) {
+    details << QStringLiteral("Resolved payload is empty.");
+    if (detailsOut) *detailsOut = details.join('\n');
+    return std::nullopt;
+  }
+
+  if (entryTypeUpper == "DDS") {
+    std::vector<std::uint8_t> out = payload.bytes;
+    if (detailsOut) *detailsOut = details.join('\n');
+    return out;
+  }
+
+  if (entryTypeUpper.startsWith("P3R")) {
+    std::span<const std::uint8_t> texBytes(payload.bytes.data(), payload.bytes.size());
+
+    auto swapped = p3rToDds(texBytes);
+    if (swapped.size() >= 4 && std::memcmp(swapped.data(), "DDS ", 4) == 0) {
+      const auto validation = gf::textures::inspect_dds(std::span<const std::uint8_t>(swapped.data(), swapped.size()));
+      if (validation.is_valid()) {
+        details << QStringLiteral("Conversion stage: direct legacy P3R magic/header swap");
+        if (detailsOut) *detailsOut = details.join('\n');
+        return swapped;
+      }
+    }
+
+    if (auto rebuilt = maybe_rebuild_ea_dds(texBytes, astFlags); !rebuilt.empty()) {
+      details << QStringLiteral("Conversion stage: fallback EA rebuild");
+      if (detailsOut) *detailsOut = details.join('\n');
+      return rebuilt;
+    }
+
+    const auto prep = gf::textures::prepare_texture_dds_for_export(texBytes, true, astFlags);
+    if (prep.ok()) {
+      details << QStringLiteral("Conversion stage: prepare_texture_dds_for_export");
+      details << p3rConversionDetailsText(prep);
+      if (detailsOut) *detailsOut = details.join('\n');
+      return prep.ddsBytes;
+    }
+
+    details << p3rConversionDetailsText(prep);
+    if (auto rebuilt = maybe_rebuild_ea_dds(texBytes, astFlags); !rebuilt.empty()) {
+      details << QStringLiteral("Conversion stage: late fallback EA rebuild");
+      if (detailsOut) *detailsOut = details.join('\n');
+      return rebuilt;
+    }
+
+    if (detailsOut) *detailsOut = details.join('\n');
+    return std::nullopt;
+  }
+
+  if (entryTypeUpper == "XPR2" || entryTypeUpper == "XPR") {
+    std::string xprErr;
+    auto dds = gf::textures::rebuild_xpr2_dds_first(
+        std::span<const std::uint8_t>(payload.bytes.data(), payload.bytes.size()),
+        &xprErr, /*all_mips=*/true);
+    if (dds.has_value() && dds->size() >= 4 && std::memcmp(dds->data(), "DDS ", 4) == 0) {
+      details << QStringLiteral("Conversion stage: rebuild_xpr2_dds_first(all_mips=true)");
+      if (detailsOut) *detailsOut = details.join('\n');
+      return dds;
+    }
+    details << QString("XPR2 decode failed: %1").arg(QString::fromStdString(xprErr));
+    if (detailsOut) *detailsOut = details.join('\n');
+    return std::nullopt;
+  }
+
+  auto rebuilt = maybe_rebuild_ea_dds(std::span<const std::uint8_t>(payload.bytes.data(), payload.bytes.size()), astFlags);
+  if (!rebuilt.empty()) {
+    details << QStringLiteral("Conversion stage: generic EA rebuild");
+    if (detailsOut) *detailsOut = details.join('\n');
+    return rebuilt;
+  }
+
+  if (detailsOut) *detailsOut = details.join('\n');
+  return std::nullopt;
+}
+
+static QString validateImportedDdsForEntry(const QString& entryTypeUpper,
+                                           const gf::textures::DdsValidationResult& validation,
+                                           const std::optional<gf::textures::DdsInfo>& currentInfo,
+                                           const std::optional<gf::textures::DdsInfo>& importedInfo) {
+  QStringList issues;
+  if (validation.status != gf::textures::DdsValidationStatus::Valid) {
+    issues << QString("DDS header/status is not fully supported: %1").arg(ddsStatusToString(validation.status));
+  }
+  if (validation.dx10HeaderPresent) {
+    issues << QString("DX10 DDS headers are not accepted for %1 replacement.").arg(entryTypeUpper);
+  }
+  if (!importedInfo.has_value()) {
+    issues << QString("The replacement DDS could not be parsed into a supported texture description.");
+  }
+  if (currentInfo.has_value() && importedInfo.has_value()) {
+    if (currentInfo->width != importedInfo->width) issues << QString("Width mismatch: current %1 vs import %2").arg(currentInfo->width).arg(importedInfo->width);
+    if (currentInfo->height != importedInfo->height) issues << QString("Height mismatch: current %1 vs import %2").arg(currentInfo->height).arg(importedInfo->height);
+    if (currentInfo->mipCount != importedInfo->mipCount) issues << QString("Mip count mismatch: current %1 vs import %2").arg(currentInfo->mipCount).arg(importedInfo->mipCount);
+    if (currentInfo->format != importedInfo->format) {
+      issues << QString("Format mismatch: current %1 vs import %2")
+                    .arg(ddsFormatToString(currentInfo->format), ddsFormatToString(importedInfo->format));
+    }
+  }
+  return issues.join("\n");
 }
 
 static QString ddsInfoSummary(const gf::textures::DdsInfo& info) {
@@ -1689,7 +1875,12 @@ std::optional<QByteArray> MainWindow::tryResolveRsfTextureBytes(const std::strin
     }
 
     const bool isEmbedded = item->data(0, Qt::UserRole + 3).toBool();
-    if (isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
+    const bool isNested = itemIsNestedSubEntry(item);
+
+    // Only use the live outer editor when this item is a direct outer-AST entry.
+    // Nested sub-entries carry an entryIndex scoped to their inner sub-AST; feeding
+    // that index to the outer editor returns the wrong payload.
+    if (isEmbedded && !isNested && m_liveAstEditor && m_liveAstPath == path) {
       const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
       const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
       std::string liveErr;
@@ -1698,6 +1889,31 @@ std::optional<QByteArray> MainWindow::tryResolveRsfTextureBytes(const std::strin
       }
       if (auto storedOpt = m_liveAstEditor->getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
         return QByteArray(reinterpret_cast<const char*>(storedOpt->data()), static_cast<int>(storedOpt->size()));
+      }
+    }
+
+    // For nested sub-entries (or when the live editor wasn't useful): read directly
+    // from the file using the absolute payload offset stored in UserRole+1.
+    if (isEmbedded && !path.isEmpty()) {
+      const quint64 absOff  = item->data(0, Qt::UserRole + 1).toULongLong();
+      const quint64 compSz  = item->data(0, Qt::UserRole + 2).toULongLong();
+      if (compSz > 0) {
+        auto raw = read_file_range(path, static_cast<std::uint64_t>(absOff),
+                                   static_cast<std::uint64_t>(compSz));
+        if (!raw.empty()) {
+          QByteArray bytes(reinterpret_cast<const char*>(raw.data()), static_cast<int>(raw.size()));
+          // If the stored bytes are zlib-compressed, inflate them before returning.
+          if (looksZlibPreviewBytes(bytes)) {
+            std::vector<std::uint8_t> zIn(static_cast<std::size_t>(bytes.size()));
+            std::memcpy(zIn.data(), bytes.constData(), static_cast<std::size_t>(bytes.size()));
+            const auto inflated = gf::core::AstArchive::inflateZlibPreview(zIn, 8u * 1024u * 1024u);
+            if (!inflated.empty()) {
+              return QByteArray(reinterpret_cast<const char*>(inflated.data()),
+                                static_cast<int>(inflated.size()));
+            }
+          }
+          return bytes;
+        }
       }
     }
 
@@ -4937,59 +5153,30 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
     if (!sourceItem) return false;
     const QString entryTypeUpper = sourceItem->text(1).trimmed().toUpper();
     const std::uint32_t entryIndex = static_cast<std::uint32_t>(sourceItem->data(0, Qt::UserRole + 6).toULongLong());
+    const std::uint32_t astFlags = (entryIndex < editor.entries().size()) ? editor.entries()[entryIndex].flags : 0u;
 
-    std::string localErr;
-    auto bytesOpt = entryTypeUpper.startsWith("P3R")
-        ? editor.getEntryStoredBytes(entryIndex)
-        : editor.getEntryInflatedBytes(entryIndex, &localErr);
-    if (!bytesOpt.has_value()) {
-      const QString why = entryTypeUpper.startsWith("P3R")
-          ? QStringLiteral("could not read stored entry bytes")
-          : QString::fromStdString(localErr);
+    auto resolved = resolveTexturePayloadForEditor(sourceItem, entryTypeUpper, editor, entryIndex);
+    if (resolved.bytes.empty()) {
+      const QString why = QString("could not resolve current-entry texture payload\n%1")
+                              .arg(summarizeResolvedTexturePayload(resolved));
       if (failures) failures->push_back(QString("%1 — %2")
                                         .arg(sourceItem->text(0).trimmed(), why));
       return false;
     }
 
-    QByteArray outBytes(reinterpret_cast<const char*>(bytesOpt->data()), int(bytesOpt->size()));
+    QByteArray outBytes(reinterpret_cast<const char*>(resolved.bytes.data()), int(resolved.bytes.size()));
     QString exportTypeUpper = entryTypeUpper;
 
-    if (entryTypeUpper.startsWith("P3R")) {
-      std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
-      const std::uint32_t astFlags = (entryIndex < editor.entries().size()) ? editor.entries()[entryIndex].flags : 0u;
-      std::vector<std::uint8_t> rebuilt = p3rToDds(std::span<const std::uint8_t>(payload.data(), payload.size()));
-      if (rebuilt.size() < 4 || std::memcmp(rebuilt.data(), "DDS ", 4) != 0) {
-        rebuilt = maybe_rebuild_ea_dds(std::span<const std::uint8_t>(payload.data(), payload.size()), astFlags);
-      }
-      if (rebuilt.size() >= 4 && std::memcmp(rebuilt.data(), "DDS ", 4) == 0) {
-        outBytes = QByteArray(reinterpret_cast<const char*>(rebuilt.data()), int(rebuilt.size()));
-        exportTypeUpper = "DDS";
-      } else {
-        const auto prep = gf::textures::prepare_texture_dds_for_export(
-            std::span<const std::uint8_t>(payload.data(), payload.size()), true, astFlags);
-        const QString detail = prep.ok()
-            ? QStringLiteral("P3R -> DDS conversion unexpectedly returned no DDS bytes.")
-            : p3rConversionDetailsText(prep);
-        if (failures) failures->push_back(QString("%1 — %2").arg(sourceItem->text(0).trimmed(), detail));
+    if (entryTypeUpper == "DDS" || entryTypeUpper.startsWith("P3R") || entryTypeUpper == "XPR2" || entryTypeUpper == "XPR") {
+      QString exportDetails;
+      auto ddsBytes = buildDdsForTextureExport(entryTypeUpper, resolved, astFlags, &exportDetails);
+      if (!ddsBytes.has_value()) {
+        if (failures) failures->push_back(QString("%1 — %2")
+                                          .arg(sourceItem->text(0).trimmed(), exportDetails));
         return false;
       }
-    } else if (entryTypeUpper == "XPR2" || entryTypeUpper == "XPR") {
-      // Export XPR2 texture as a DDS file (full mip chain when available).
-      std::vector<std::uint8_t> payload(bytesOpt->begin(), bytesOpt->end());
-      std::string xprErr;
-      auto dds = gf::textures::rebuild_xpr2_dds_first(
-          std::span<const std::uint8_t>(payload.data(), payload.size()),
-          &xprErr, /*all_mips=*/true);
-      if (dds.has_value() && dds->size() >= 4 &&
-          std::memcmp(dds->data(), "DDS ", 4) == 0) {
-        outBytes = QByteArray(reinterpret_cast<const char*>(dds->data()), int(dds->size()));
-        exportTypeUpper = "DDS";
-      } else {
-        if (failures) failures->push_back(QString("%1 — XPR2 decode failed: %2")
-                                          .arg(sourceItem->text(0).trimmed(),
-                                               QString::fromStdString(xprErr)));
-        return false;
-      }
+      outBytes = QByteArray(reinterpret_cast<const char*>(ddsBytes->data()), int(ddsBytes->size()));
+      exportTypeUpper = "DDS";
     }
 
     if (exportTypeUpper == "DDS") {
@@ -5147,60 +5334,34 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
       const auto directValidation = gf::textures::inspect_dds(
           std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
                                         static_cast<std::size_t>(newBytes.size())));
-      if (typeUpper == "DDS" || typeUpper.startsWith("P3R")) {
-        if (directValidation.status == gf::textures::DdsValidationStatus::Invalid) {
-          showErrorDialog("Replace Texture Failed",
-                          "The selected DDS is invalid.",
-                          ddsValidationDetailsText(directValidation),
-                          false);
-          return;
-        }
-      }
-
-      QByteArray inspectBytes = newBytes;
-      if (typeUpper.startsWith("P3R")) {
-        std::uint8_t verByte = 0x02;
-        if (oldStored && oldStored->size() >= 4 && (*oldStored)[0] == 'P' && (*oldStored)[1] == '3' && (*oldStored)[2] == 'R') {
-          verByte = (*oldStored)[3];
-        }
-        const auto conv = ddsToP3r(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(inspectBytes.constData()),
-                                                                 static_cast<std::size_t>(inspectBytes.size())),
-                                   verByte);
-        inspectBytes = QByteArray(reinterpret_cast<const char*>(conv.data()), int(conv.size()));
-      }
-
-      auto newInfo = tryParseTextureDdsInfo(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(inspectBytes.constData()),
-                                                                          static_cast<std::size_t>(inspectBytes.size())),
-                                            astFlags);
-      if (!newInfo.has_value()) {
+      if (directValidation.status == gf::textures::DdsValidationStatus::Invalid) {
         showErrorDialog("Replace Texture Failed",
-                        "The selected replacement file could not be parsed as a supported texture.",
+                        "The selected DDS is invalid.",
                         ddsValidationDetailsText(directValidation),
                         false);
         return;
       }
 
-      QStringList mismatchLines;
+      auto newInfo = tryParseTextureDdsInfo(
+          std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
+                                        static_cast<std::size_t>(newBytes.size())),
+          astFlags);
+      const QString contractIssues = validateImportedDdsForEntry(typeUpper, directValidation, oldInfo, newInfo);
+      if (!contractIssues.isEmpty()) {
+        showErrorDialog("Replace Texture Failed",
+                        "DDS replacement does not match the original texture slot contract.",
+                        QString("Current texture: %1\nReplacement: %2\n\n%3\n\nDDS details:\n%4")
+                            .arg(oldInfo.has_value() ? ddsInfoSummary(*oldInfo) : QString("Unknown"))
+                            .arg(newInfo.has_value() ? ddsInfoSummary(*newInfo) : QString("Unknown"))
+                            .arg(contractIssues)
+                            .arg(ddsValidationDetailsText(directValidation)),
+                        false);
+        return;
+      }
+
       validationDetails = QString("Current texture: %1\nReplacement: %2")
                               .arg(oldInfo.has_value() ? ddsInfoSummary(*oldInfo) : QString("Unknown"))
-                              .arg(ddsInfoSummary(*newInfo));
-      if (oldInfo.has_value()) {
-        if (oldInfo->width != newInfo->width) mismatchLines << QString("Width: %1 → %2").arg(oldInfo->width).arg(newInfo->width);
-        if (oldInfo->height != newInfo->height) mismatchLines << QString("Height: %1 → %2").arg(oldInfo->height).arg(newInfo->height);
-        if (oldInfo->mipCount != newInfo->mipCount) mismatchLines << QString("Mip Levels: %1 → %2").arg(oldInfo->mipCount).arg(newInfo->mipCount);
-        if (oldInfo->format != newInfo->format) mismatchLines << QString("Format: %1 → %2")
-          .arg(ddsFormatToString(oldInfo->format), ddsFormatToString(newInfo->format));
-      }
-      if (!mismatchLines.isEmpty()) {
-        const auto mismatch = QMessageBox::warning(
-            this,
-            "Texture Mismatch Warning",
-            QString("The replacement texture does not exactly match the current entry.\n\n%1\n\nContinue anyway?")
-                .arg(mismatchLines.join("\n")),
-            QMessageBox::Yes | QMessageBox::No,
-            QMessageBox::No);
-        if (mismatch != QMessageBox::Yes) return;
-      }
+                              .arg(newInfo.has_value() ? ddsInfoSummary(*newInfo) : QString("Unknown"));
     }
 
     if (validateTextureReplacement && (typeUpper == "XPR2" || typeUpper == "XPR")) {
@@ -5212,11 +5373,20 @@ void MainWindow::onTreeContextMenu(const QPoint& pos) {
         showErrorDialog("Replace Texture Failed", "Replacement DDS has no texture data.", "", false);
         return;
       }
+      const auto newDdsValidation = gf::textures::inspect_dds(
+          std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
+                                        static_cast<std::size_t>(newBytes.size())));
+      if (newDdsValidation.status != gf::textures::DdsValidationStatus::Valid || newDdsValidation.dx10HeaderPresent) {
+        showErrorDialog("Replace Texture Failed",
+                        "Replacement DDS is not accepted for XPR2 import.",
+                        ddsValidationDetailsText(newDdsValidation), false);
+        return;
+      }
       auto newDdsInfo = gf::textures::parse_dds_info(
           std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(newBytes.constData()),
                                         static_cast<std::size_t>(newBytes.size())));
       if (!newDdsInfo) {
-        showErrorDialog("Replace Texture Failed", "Cannot parse the replacement DDS header.", "", false);
+        showErrorDialog("Replace Texture Failed", "Cannot parse the replacement DDS header.", ddsValidationDetailsText(newDdsValidation), false);
         return;
       }
       if (newDdsInfo->width == 0 || newDdsInfo->height == 0) {
@@ -10042,6 +10212,27 @@ void MainWindow::invalidatePreviewContext() {
   }
 }
 
+static bool looksLikeTexturePreviewBytes(const QByteArray& bytes);
+
+// Returns true when `item` is a leaf entry that lives inside a nested embedded
+// sub-AST, meaning it has at least one ancestor QTreeWidgetItem whose type column
+// reads "AST" and which carries a valid entry-index role.
+//
+// In this situation item->data(0, Qt::UserRole+6) holds an index that is relative
+// to the *inner* sub-AST directory – it cannot be used with the outer container's
+// AstContainerEditor.  The safe read path is always the direct file-range read
+// using UserRole+1 (which stores the absolute byte offset of the payload).
+static bool itemIsNestedSubEntry(const QTreeWidgetItem* item) {
+  if (!item) return false;
+  for (const QTreeWidgetItem* p = item->parent(); p; p = p->parent()) {
+    if (p->text(1).compare(QStringLiteral("AST"), Qt::CaseInsensitive) == 0 &&
+        p->data(0, Qt::UserRole + 6).isValid()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTreeWidgetItem* item) const {
   PreviewSelectionContext ctx;
   ctx.selectionVersion = m_previewSelectionVersion;
@@ -10059,6 +10250,10 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
   ctx.entryType = type;
   ctx.entryIndex = entryIndex;
   ctx.isEmbedded = isEmbedded;
+  // Determine whether this item is a sub-entry inside a nested embedded AST.
+  // When true, entryIndex is scoped to the inner sub-AST and must NOT be used
+  // with the outer m_liveAstEditor.  See itemIsNestedSubEntry() for rationale.
+  ctx.isNestedSubEntry = itemIsNestedSubEntry(item);
 
   constexpr quint64 kPreviewMax = 4096;
   constexpr quint64 kMaxStoredRead = 2ull * 1024ull * 1024ull;
@@ -10083,7 +10278,12 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
     }
   }
 
-  if (ctx.rawBytes.isEmpty() && isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
+  if (ctx.rawBytes.isEmpty() && isEmbedded && !ctx.isNestedSubEntry &&
+      m_liveAstEditor && m_liveAstPath == path) {
+    // Only safe when this item is a *direct* entry of the outer on-disk container
+    // that m_liveAstEditor was loaded from.  For entries inside a nested embedded
+    // sub-AST, entryIndex is relative to the inner BGFA and getEntryStoredBytes()
+    // would silently return the wrong outer entry (often a tiny XML blob).
     if (auto storedOpt = m_liveAstEditor->getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
       ctx.rawBytes = QByteArray(reinterpret_cast<const char*>(storedOpt->data()), static_cast<int>(std::min<std::size_t>(storedOpt->size(), static_cast<std::size_t>(std::numeric_limits<int>::max()))));
       ctx.rawSource = QStringLiteral("editor.getEntryStoredBytes");
@@ -10113,14 +10313,18 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
 
   QByteArray inflated;
   QString inflatedSource;
-  if (isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
+  const bool texturePrefersStored = textureTypePrefersStoredBytes(type.toUpper());
+  const bool entryLooksCompressed = (type.compare("ZLIB", Qt::CaseInsensitive) == 0) || looksZlibPreviewBytes(ctx.rawBytes);
+  if (entryLooksCompressed && isEmbedded && !ctx.isNestedSubEntry &&
+      m_liveAstEditor && m_liveAstPath == path) {
+    // Same guard as above: only valid for direct outer entries.
     std::string inflateErr;
     if (auto fullOpt = m_liveAstEditor->getEntryInflatedBytes(entryIndex, &inflateErr); fullOpt.has_value() && !fullOpt->empty()) {
       inflated = QByteArray(reinterpret_cast<const char*>(fullOpt->data()), static_cast<int>(std::min<std::size_t>(fullOpt->size(), static_cast<std::size_t>(std::numeric_limits<int>::max()))));
       inflatedSource = QStringLiteral("editor.getEntryInflatedBytes");
     }
   }
-  if (inflated.isEmpty() && looksZlibPreviewBytes(ctx.rawBytes)) {
+  if (entryLooksCompressed && inflated.isEmpty() && looksZlibPreviewBytes(ctx.rawBytes)) {
     std::vector<std::uint8_t> zIn(static_cast<std::size_t>(ctx.rawBytes.size()));
     if (!ctx.rawBytes.isEmpty()) std::memcpy(zIn.data(), ctx.rawBytes.constData(), static_cast<std::size_t>(ctx.rawBytes.size()));
     const auto inflatedPreview = gf::core::AstArchive::inflateZlibPreview(zIn, 8u * 1024u * 1024u);
@@ -10131,13 +10335,14 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
   }
   ctx.inflatedBytes = inflated;
   ctx.inflatedSource = inflatedSource;
+  Q_ASSERT(!texturePrefersStored || entryLooksCompressed || ctx.inflatedBytes.isEmpty());
 
   ctx.hexBytes = !ctx.inflatedBytes.isEmpty()
       ? ctx.inflatedBytes.left(static_cast<int>(std::min<quint64>(kPreviewMax, static_cast<quint64>(ctx.inflatedBytes.size()))))
       : ctx.rawBytes.left(static_cast<int>(std::min<quint64>(kPreviewMax, static_cast<quint64>(ctx.rawBytes.size()))));
   ctx.hexSource = !ctx.inflatedBytes.isEmpty() ? ctx.inflatedSource : ctx.rawSource;
 
-  const QByteArray textCandidatePrimary = !ctx.inflatedBytes.isEmpty() ? ctx.inflatedBytes : ctx.rawBytes;
+  const QByteArray textCandidatePrimary = (!ctx.inflatedBytes.isEmpty() && !texturePrefersStored) ? ctx.inflatedBytes : ctx.rawBytes;
   if (decodeTextCandidateBytes(textCandidatePrimary).has_value()) {
     ctx.textBytes = textCandidatePrimary;
     ctx.textSource = !ctx.inflatedBytes.isEmpty() ? ctx.inflatedSource : ctx.rawSource;
@@ -10146,7 +10351,7 @@ MainWindow::PreviewSelectionContext MainWindow::buildPreviewContextForItem(QTree
     ctx.textDetectedType = QStringLiteral("binary/non-text");
   }
 
-  if (ctx.textureBytes.isEmpty() && !ctx.inflatedBytes.isEmpty()) {
+  if (ctx.textureBytes.isEmpty() && !ctx.inflatedBytes.isEmpty() && !texturePrefersStored) {
     ctx.textureBytes = ctx.inflatedBytes;
     ctx.textureSource = ctx.inflatedSource;
   }
@@ -10176,13 +10381,17 @@ static bool looksLikeTexturePreviewBytes(const QByteArray& bytes) {
 
 QString MainWindow::buildPreviewDiagnosticsText(const PreviewSelectionContext& ctx) const {
   QStringList lines;
-  lines << QStringLiteral("Selection v%1 | entry=%2 | type=%3 | embedded=%4 | index=%5")
+  lines << QStringLiteral("Selection v%1 | entry=%2 | type=%3 | embedded=%4 | nested-sub=%5 | index=%6")
               .arg(ctx.selectionVersion)
               .arg(ctx.entryDisplayName.isEmpty() ? QStringLiteral("(none)") : ctx.entryDisplayName)
               .arg(ctx.entryType.isEmpty() ? QStringLiteral("(unknown)") : ctx.entryType)
               .arg(ctx.isEmbedded ? QStringLiteral("yes") : QStringLiteral("no"))
+              .arg(ctx.isNestedSubEntry ? QStringLiteral("yes") : QStringLiteral("no"))
               .arg(ctx.entryIndex);
   if (!ctx.entryPath.isEmpty()) lines << ctx.entryPath;
+  if (ctx.isNestedSubEntry) {
+    lines << QStringLiteral("NOTE: nested-sub-entry — live editor NOT used; bytes from direct file range read (UserRole+1 = absolute payload offset)");
+  }
   lines << QStringLiteral("raw: %1").arg(previewBufferSummary(ctx.rawBytes, ctx.rawSource));
   lines << QStringLiteral("inflated: %1").arg(previewBufferSummary(ctx.inflatedBytes, ctx.inflatedSource));
   lines << QStringLiteral("hex-tab: %1").arg(previewBufferSummary(ctx.hexBytes, ctx.hexSource));
@@ -10625,69 +10834,38 @@ void MainWindow::showViewerForItem(QTreeWidgetItem* item) {
       };
 
       if (!m_previewContext.textureBytes.isEmpty() &&
-          (m_previewContext.textureSource == QStringLiteral("tree.previewBytes") ||
-           m_previewContext.textureSource == QStringLiteral("converted.current-selection") ||
-           looksLikeTexturePreviewBytes(m_previewContext.textureBytes))) {
+          m_previewContext.textureSource == QStringLiteral("converted.current-selection")) {
         return toVector(m_previewContext.textureBytes);
       }
 
-      // First prefer any pending preview payload stored directly on the tree item, but
-      // only when it still looks like an actual texture payload for this entry.
-      if (isEmbedded) {
-        const QVariant previewVar = item->data(0, Qt::UserRole + 31);
-        if (previewVar.isValid()) {
-          const QByteArray preview = previewVar.toByteArray();
-          if (!preview.isEmpty() && looksLikeTexturePreviewBytes(preview)) {
-            return toVector(preview);
+      // Prefer the live in-memory AST editor for embedded entries so preview reflects
+      // unsaved Replace Texture / Replace File changes immediately, but keep raw/inflated
+      // source-of-truth handling explicit for texture entries.
+      //
+      // IMPORTANT: Only use m_liveAstEditor when this item is a DIRECT entry of the outer
+      // on-disk AST.  For items that are leaves of a nested embedded sub-AST, entryIndex
+      // is scoped to the inner sub-AST directory; querying the outer editor with it returns
+      // the wrong entry (often a tiny XML stub, as seen with P3R jersey textures).
+      // In that case the direct file-range read below (using UserRole+1 = absolute offset)
+      // is the correct path.
+      if (isEmbedded && !itemIsNestedSubEntry(item) &&
+          m_liveAstEditor && m_liveAstPath == path) {
+        const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
+        const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
+        auto resolved = resolveTexturePayloadForEditor(item, type.toUpper(), *m_liveAstEditor, entryIndex);
+        if (!resolved.bytes.empty()) {
+          if (resolved.bytes.size() > kMaxInflated) {
+            resolved.bytes.resize(static_cast<std::size_t>(kMaxInflated));
           }
-        }
-
-        const QVariant pendingVar = item->data(0, Qt::UserRole + 30);
-        if (pendingVar.isValid()) {
-          const QByteArray pending = pendingVar.toByteArray();
-          if (!pending.isEmpty()) {
-            return toVector(pending);
-          }
+          return resolved.bytes;
         }
       }
 
-      // Prefer the live in-memory AST editor for embedded entries so preview reflects
-      // unsaved Replace Texture / Replace File changes immediately. For texture preview,
-      // use stored bytes first and only inflate when the payload itself is zlib-wrapped.
-      if (isEmbedded && m_liveAstEditor && m_liveAstPath == path) {
-        const qulonglong entryIndexQ = item->data(0, Qt::UserRole + 6).toULongLong();
-        const std::uint32_t entryIndex = static_cast<std::uint32_t>(entryIndexQ);
-
-        if (auto storedOpt = m_liveAstEditor->getEntryStoredBytes(entryIndex); storedOpt.has_value() && !storedOpt->empty()) {
-          auto raw = std::move(*storedOpt);
-          if (raw.size() > kMaxStored) {
-            raw.resize(static_cast<std::size_t>(kMaxStored));
-          }
-
-          const bool isZlibType = (type == "ZLIB");
-          const bool looksZlib = (raw.size() >= 2 && looks_like_zlib_cmf_flg(raw[0], raw[1]));
-          if (!isZlibType && !looksZlib) return raw;
-
-          try {
-            std::vector<std::uint8_t> inflated = zlib_inflate_unknown_size(std::span<const std::uint8_t>(raw.data(), raw.size()));
-            if (inflated.size() > kMaxInflated) {
-              inflated.resize(static_cast<std::size_t>(kMaxInflated));
-            }
-            return inflated;
-          } catch (...) {
-            return raw;
-          }
-        }
-
-        std::string liveErr;
-        if (type == "ZLIB") {
-          if (auto fullOpt = m_liveAstEditor->getEntryInflatedBytes(entryIndex, &liveErr); fullOpt.has_value() && !fullOpt->empty()) {
-            auto full = std::move(*fullOpt);
-            if (full.size() > kMaxInflated) {
-              full.resize(static_cast<std::size_t>(kMaxInflated));
-            }
-            return full;
-          }
+      if (isEmbedded) {
+        const QVariant pendingVar = item->data(0, Qt::UserRole + 30);
+        if (pendingVar.isValid()) {
+          const QByteArray pending = pendingVar.toByteArray();
+          if (!pending.isEmpty()) return toVector(pending);
         }
       }
 
@@ -10792,10 +10970,18 @@ if (wantsTexture) {
     }
 
     if (wasP3R) {
-      const auto prep = gf::textures::prepare_texture_dds_for_export(texBytes, true, astFlags);
-      if (prep.ok()) {
-        rebuilt = prep.ddsBytes;
+      ResolvedTexturePayload resolvedPreview;
+      resolvedPreview.bytes = payload;
+      resolvedPreview.rawBytes = payload;
+      resolvedPreview.rawSize = payload.size();
+      resolvedPreview.source = QStringLiteral("preview.current-entry");
+      resolvedPreview.rawSource = resolvedPreview.source;
+      QString exportDetails;
+      if (auto built = buildDdsForTextureExport(QStringLiteral("P3R"), resolvedPreview, astFlags, &exportDetails); built.has_value()) {
+        rebuilt = std::move(*built);
         texBytes = std::span<const std::uint8_t>(rebuilt.data(), rebuilt.size());
+      } else if (m_textureInfo) {
+        m_textureInfo->setText(exportDetails);
       }
     } else if (!startsDds) {
       // Non-P3R: attempt EA rebuild when the payload doesn't start with "DDS ".

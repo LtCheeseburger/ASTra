@@ -496,6 +496,14 @@ private:
     QString entryType;
     quint32 entryIndex = 0;
     bool isEmbedded = false;
+    // True when this item is a leaf entry inside a *nested* embedded sub-AST
+    // (i.e. it has an ancestor tree item whose type is "AST").
+    // In that case entryIndex is relative to the inner sub-AST directory, NOT to the
+    // outer on-disk container that m_liveAstEditor represents.  Using
+    // m_liveAstEditor->getEntryStoredBytes(entryIndex) would silently return the wrong
+    // outer-AST entry – typically a tiny XML metadata stub.  We must use the direct
+    // file-range read (which uses UserRole+1 = absolute byte offset) instead.
+    bool isNestedSubEntry = false;
 
     QByteArray rawBytes;
     QByteArray inflatedBytes;
